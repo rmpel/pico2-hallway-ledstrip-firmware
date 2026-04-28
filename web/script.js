@@ -1,25 +1,36 @@
 let config = {};
+let originalConfigJson = '{}';
 let currentEditingStep = null;
+let dirty = false;
+let statusTimer = null;
+let previewDebounceTimer = null;
+let previewInUse = false;
+let deviceUtcEpoch = null;     // last reported UTC epoch from device
+let deviceUtcEpochAt = null;   // Date.now() when we received it
+let deviceTzOffset = 0;        // device's cached tz offset in seconds
+let clockTimer = null;
 
-// Load initial config
 async function loadConfig() {
   try {
     const response = await fetch( 'api/config' );
     config = await response.json();
+    originalConfigJson = JSON.stringify( config );
+    dirty = false;
+    updateSaveBar();
     updateUI();
   } catch (error) {
     showMessage( 'Failed to load configuration', 'error' );
   }
 }
 
-// Load status
 async function loadStatus() {
+  if (dirty) return;
   try {
     const response = await fetch( 'api/status' );
     const status = await response.json();
 
     document.getElementById( 'currentMode' ).textContent = status.mode.toUpperCase();
-    Array.from( document.querySelectorAll('.mode-control button') ).forEach( btn => {
+    Array.from( document.querySelectorAll( '.mode-control button' ) ).forEach( btn => {
       btn.classList.remove( 'btn-active' );
       if (btn.classList.contains( `mode-${status.mode}` )) {
         btn.classList.add( 'btn-active' );
@@ -29,44 +40,47 @@ async function loadStatus() {
     document.getElementById( 'wifiStatus' ).textContent = status.wifi.connected ?
       `Connected (${status.wifi.ip})` : 'Disconnected';
 
-    // Show current time and sun times
-    let timeDisplay = status.current_time || '-';
+    deviceUtcEpoch = status.utc_epoch;
+    deviceUtcEpochAt = Date.now();
+    deviceTzOffset = status.tz_offset_seconds || 0;
+
+    let ntpSuffix = '';
     if (status.ntp) {
       if (status.ntp.synced) {
         const minsAgo = Math.floor( status.ntp.last_sync_seconds_ago / 60 );
-        timeDisplay += ` (NTP: ${minsAgo}m ago)`;
+        ntpSuffix = ` (NTP: ${minsAgo}m ago)`;
       } else {
-        timeDisplay += ' (NTP: not synced)';
+        ntpSuffix = ' (NTP: not synced)';
       }
     }
-    document.getElementById( 'currentTime' ).textContent = timeDisplay;
+    document.getElementById( 'currentTimeUtc' ).dataset.suffix = ntpSuffix;
 
     if (status.sun_times) {
-      document.getElementById( 'sunTimes' ).textContent =
-        `↑${status.sun_times.sunrise} ↓${status.sun_times.sunset}`;
+      // Stored as seconds since UTC midnight; add device tz offset to get
+      // device-local wall-clock seconds-since-midnight, then format HH:MM.
+      const offset = status.tz_offset_seconds || 0;
+      const sunriseLocalSec = ((status.sun_times.sunrise_utc_seconds + offset) % 86400 + 86400) % 86400;
+      const sunsetLocalSec = ((status.sun_times.sunset_utc_seconds + offset) % 86400 + 86400) % 86400;
+      const fmtSec = s => `${pad2( Math.floor( s / 3600 ) )}:${pad2( Math.floor( (s % 3600) / 60 ) )}`;
+      document.getElementById( 'sunTimes' ).textContent = `↑${fmtSec(sunriseLocalSec)} ↓${fmtSec(sunsetLocalSec)}`;
     } else {
       document.getElementById( 'sunTimes' ).textContent = 'Not calculated';
     }
 
-    // Show upcoming events
+    tickClocks();
+
     if (status.schedule_info && status.schedule_info.upcoming_events) {
       const container = document.getElementById( 'upcomingEvents' );
       container.innerHTML = status.schedule_info.upcoming_events.map( e => {
-        const mins = Math.floor( e.seconds_until / 60 );
         const offsetStr = e.step.offset >= 0 ? `+${e.step.offset}` : e.step.offset;
-
-        // calculate actual H:i time from seconds since midnight.
-        const calculatedTime = e.time + thisMidnight();
-        console.log(thisMidnight(), e)
-        const hours = Math.floor( calculatedTime / 3600 ) % 24;
-        const minutes = Math.floor( (calculatedTime % 3600) / 60 );
+        const tSec = e.time % 86400;
+        const hours = Math.floor( tSec / 3600 );
+        const minutes = Math.floor( (tSec % 3600) / 60 );
         const timeStr = `${hours.toString().padStart( 2, '0' )}:${minutes.toString().padStart( 2, '0' )}`;
-
-        const timeType = e.step.time || `${timeStr} ( ${e.step.event} ${offsetStr}m )`;
-
+        const label = e.step.time || `${timeStr} ( ${e.step.event} ${offsetStr}m )`;
         return `<div class="upcoming-event">
-                            <span>${timeType} → ${e.step.brightness}%</span>
-                            <span>${mins}min</span>
+                            <span>${label} → ${e.step.brightness}%</span>
+                            <span>${formatDuration( e.seconds_until )}</span>
                         </div>`;
       } ).join( '' );
     }
@@ -75,21 +89,62 @@ async function loadStatus() {
   }
 }
 
-function thisMidnight () {
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
+function pad2 (n) { return n.toString().padStart( 2, '0' ); }
 
-// Difference in seconds
-  return Math.floor(now / 1000);
+function formatDuration (totalSeconds) {
+  const s = Math.max( 0, Math.floor( totalSeconds ) );
+  const days = Math.floor( s / 86400 );
+  const hours = Math.floor( (s % 86400) / 3600 );
+  const minutes = Math.floor( (s % 3600) / 60 );
+  if (s < 60) return `${s} sec`;
+  const parts = [];
+  if (days) parts.push( `${days} day${days === 1 ? '' : 's'}` );
+  if (hours) parts.push( `${hours} hour${hours === 1 ? '' : 's'}` );
+  if (minutes) parts.push( `${minutes} min` );
+  return parts.join( ', ' );
 }
 
-// Update UI from config
+function formatHMS (date, useUtc) {
+  const h = useUtc ? date.getUTCHours() : date.getHours();
+  const m = useUtc ? date.getUTCMinutes() : date.getMinutes();
+  const s = useUtc ? date.getUTCSeconds() : date.getSeconds();
+  return `${pad2( h )}:${pad2( m )}:${pad2( s )}`;
+}
+
+function tickClocks () {
+  // Browser
+  document.getElementById( 'currentTimeBrowser' ).textContent = formatHMS( new Date(), false );
+
+  // Device clocks (extrapolated from last status report + elapsed wall clock)
+  if (deviceUtcEpoch != null) {
+    const elapsed = Math.floor( (Date.now() - deviceUtcEpochAt) / 1000 );
+    const utcNow = new Date( (deviceUtcEpoch + elapsed) * 1000 );
+    const localNow = new Date( (deviceUtcEpoch + elapsed + deviceTzOffset) * 1000 );
+    const utcEl = document.getElementById( 'currentTimeUtc' );
+    const localEl = document.getElementById( 'currentTimeLocal' );
+    const suffix = utcEl.dataset.suffix || '';
+    utcEl.textContent = formatHMS( utcNow, true ) + suffix;
+    // Show in UTC so browser-local rendering can't double-convert; this is the
+    // "what wall-clock time the Pico thinks it is, after applying its cached offset".
+    localEl.textContent = formatHMS( localNow, true );
+  }
+}
+
+function markDirty () {
+  if (!dirty) {
+    dirty = true;
+    updateSaveBar();
+  }
+}
+
+function updateSaveBar () {
+  document.getElementById( 'saveBar' ).style.display = dirty ? 'block' : 'none';
+}
+
 function updateUI() {
   document.getElementById( 'latitude' ).value = config.location?.latitude || '';
   document.getElementById( 'longitude' ).value = config.location?.longitude || '';
-  document.getElementById( 'timezone' ).value = config.location?.timezone || 'UTC';
 
-  // Update manual color controls
   if (config.manual) {
     document.getElementById( 'manualHue' ).value = config.manual.hue ?? 180;
     document.getElementById( 'manualSat' ).value = config.manual.saturation ?? 100;
@@ -100,7 +155,6 @@ function updateUI() {
   renderSchedule();
 }
 
-// Update manual color preview and value displays
 function updateManualColor() {
   updateManualColorDisplay();
 }
@@ -116,7 +170,6 @@ function updateManualColorDisplay() {
   document.getElementById( 'manualColorPreview' ).style.background = hsvToRgbCss( h, s, v );
 }
 
-// Save manual color settings
 async function saveManualColor() {
   const h = parseInt( document.getElementById( 'manualHue' ).value );
   const s = parseInt( document.getElementById( 'manualSat' ).value );
@@ -126,25 +179,20 @@ async function saveManualColor() {
     await fetch( 'api/manual', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify( {
-        hue: h,
-        saturation: s,
-        brightness: v
-      } )
+      body: JSON.stringify( {hue: h, saturation: s, brightness: v} )
     } );
     showMessage( 'Manual color saved', 'success' );
 
-    // Update local config
     if (!config.manual) config.manual = {};
     config.manual.hue = h;
     config.manual.saturation = s;
     config.manual.brightness = v;
+    originalConfigJson = JSON.stringify( config );
   } catch (error) {
     showMessage( 'Failed to save manual color', 'error' );
   }
 }
 
-// HSV to RGB
 function hsvToRgbCss(h, s, v) {
   s = s / 100;
   v = v / 100;
@@ -153,36 +201,16 @@ function hsvToRgbCss(h, s, v) {
   const m = v - c;
   let r, g, b;
 
-  if (h < 60) {
-    r = c;
-    g = x;
-    b = 0;
-  } else if (h < 120) {
-    r = x;
-    g = c;
-    b = 0;
-  } else if (h < 180) {
-    r = 0;
-    g = c;
-    b = x;
-  } else if (h < 240) {
-    r = 0;
-    g = x;
-    b = c;
-  } else if (h < 300) {
-    r = x;
-    g = 0;
-    b = c;
-  } else {
-    r = c;
-    g = 0;
-    b = x;
-  }
+  if (h < 60) { r = c; g = x; b = 0; }
+  else if (h < 120) { r = x; g = c; b = 0; }
+  else if (h < 180) { r = 0; g = c; b = x; }
+  else if (h < 240) { r = 0; g = x; b = c; }
+  else if (h < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
 
   return `rgb(${Math.round( (r + m) * 255 )}, ${Math.round( (g + m) * 255 )}, ${Math.round( (b + m) * 255 )})`;
 }
 
-// Render schedule
 function renderSchedule() {
   const container = document.getElementById( 'scheduleList' );
   if (!config.schedule || config.schedule.length === 0) {
@@ -190,7 +218,6 @@ function renderSchedule() {
     return;
   }
 
-  // Sort by calculated time
   const sorted = config.schedule.map( (s, i) => ({step: s, index: i}) );
   container.innerHTML = sorted.map( ({step, index}) => {
     const timeType = step.time ? 'exact' : 'sun';
@@ -211,12 +238,13 @@ function renderSchedule() {
                                onchange="updateStep(${index}, 'offset', parseInt(this.value))" placeholder="Offset (min)" style="width: 80px;">
                     </div>
                     <div class="calculated-time" id="calc_${index}"></div>
-                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px;">
+                    <div style="display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
                         <div class="color-preview" style="background: ${hsvToRgbCss( step.hue, step.saturation, step.brightness )}"
                              onclick="openColorPicker(${index}, ${step.hue}, ${step.saturation}, ${step.brightness})"></div>
-                        <div style="flex: 1;">
+                        <div style="flex: 1; min-width: 180px;">
                             Brightness: ${step.brightness}% | Hue: ${step.hue}° | Sat: ${step.saturation}%
                         </div>
+                        <button onclick="previewStep(${index})" class="btn btn-small">Preview</button>
                         <button onclick="removeStep(${index})" class="btn-delete">×</button>
                     </div>
                 </div>`;
@@ -234,12 +262,13 @@ function toggleTimeType(index, type) {
     step.event = document.getElementById( `event_${index}` ).value || 'sunset';
     step.offset = parseInt( document.getElementById( `offset_${index}` ).value ) || 0;
   }
-  saveConfig();
+  markDirty();
+  renderSchedule();
 }
 
 function updateStepTime(index, timeValue) {
   config.schedule[index].time = timeValue;
-  saveConfig();
+  markDirty();
 }
 
 function openColorPicker(index, h, s, v) {
@@ -250,11 +279,15 @@ function openColorPicker(index, h, s, v) {
   updateColorPreview();
   document.getElementById( 'colorPickerOverlay' ).style.display = 'block';
   document.getElementById( 'colorPickerPopup' ).classList.add( 'active' );
+  schedulePreviewSend();
 }
 
 function closeColorPicker() {
   document.getElementById( 'colorPickerOverlay' ).style.display = 'none';
   document.getElementById( 'colorPickerPopup' ).classList.remove( 'active' );
+  if (previewInUse) {
+    stopPreview();
+  }
 }
 
 function updateColorPreview() {
@@ -265,6 +298,62 @@ function updateColorPreview() {
   document.getElementById( 'satValue' ).textContent = s;
   document.getElementById( 'brightValue' ).textContent = v;
   document.getElementById( 'pickerPreview' ).style.background = hsvToRgbCss( h, s, v );
+  schedulePreviewSend();
+}
+
+function schedulePreviewSend () {
+  if (previewDebounceTimer) clearTimeout( previewDebounceTimer );
+  previewDebounceTimer = setTimeout( sendPickerPreview, 500 );
+}
+
+async function sendPickerPreview () {
+  const h = parseInt( document.getElementById( 'hueSlider' ).value );
+  const s = parseInt( document.getElementById( 'satSlider' ).value );
+  const v = parseInt( document.getElementById( 'brightSlider' ).value );
+  try {
+    await fetch( 'api/preview', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify( {hue: h, saturation: s, brightness: v} )
+    } );
+    previewInUse = true;
+  } catch (e) {
+    console.error( 'preview failed', e );
+  }
+}
+
+async function previewStep (index) {
+  const step = config.schedule[index];
+  try {
+    await fetch( 'api/preview', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify( {
+        hue: step.hue,
+        saturation: step.saturation,
+        brightness: step.brightness
+      } )
+    } );
+    previewInUse = true;
+    showMessage( `Previewing step ${index + 1}`, 'success' );
+  } catch (e) {
+    showMessage( 'Preview failed', 'error' );
+  }
+}
+
+async function stopPreview () {
+  try {
+    await fetch( 'api/preview/stop', {method: 'POST'} );
+  } catch (e) {
+    console.error( 'stop preview failed', e );
+  } finally {
+    previewInUse = false;
+  }
+}
+
+async function resumeSchedule () {
+  await stopPreview();
+  showMessage( 'Schedule resumed', 'success' );
 }
 
 function applyColor() {
@@ -272,14 +361,15 @@ function applyColor() {
     config.schedule[currentEditingStep].hue = parseInt( document.getElementById( 'hueSlider' ).value );
     config.schedule[currentEditingStep].saturation = parseInt( document.getElementById( 'satSlider' ).value );
     config.schedule[currentEditingStep].brightness = parseInt( document.getElementById( 'brightSlider' ).value );
-    saveConfig();
+    markDirty();
+    renderSchedule();
   }
   closeColorPicker();
 }
 
 function updateStep(index, field, value) {
   config.schedule[index][field] = value;
-  saveConfig();
+  markDirty();
 }
 
 function addScheduleStep() {
@@ -291,22 +381,27 @@ function addScheduleStep() {
     hue: 180,
     saturation: 100
   } );
-  saveConfig();
+  markDirty();
+  renderSchedule();
 }
 
 function removeStep(index) {
   config.schedule.splice( index, 1 );
-  saveConfig();
+  markDirty();
+  renderSchedule();
+}
+
+function locationChanged () {
+  config.location = {
+    latitude: parseFloat( document.getElementById( 'latitude' ).value ),
+    longitude: parseFloat( document.getElementById( 'longitude' ).value )
+  };
+  markDirty();
 }
 
 async function saveLocation() {
-  config.location = {
-    latitude: parseFloat( document.getElementById( 'latitude' ).value ),
-    longitude: parseFloat( document.getElementById( 'longitude' ).value ),
-    timezone: document.getElementById( 'timezone' ).value
-  };
-  await saveConfig();
-  showMessage( 'Location saved successfully', 'success' );
+  locationChanged();
+  await saveSettings();
 }
 
 async function setMode(mode) {
@@ -323,21 +418,39 @@ async function setMode(mode) {
   }
 }
 
-async function saveConfig() {
+async function saveSettings () {
+  if (!dirty) return;
   try {
-    // Don't send mode in config - it has its own endpoint
     const configToSave = {...config};
     delete configToSave.mode;
-
-    await fetch( 'api/config', {
+    const response = await fetch( 'api/config', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify( configToSave )
     } );
-    renderSchedule();
+    if (!response.ok) {
+      const txt = await response.text();
+      showMessage( `Save failed (${response.status}): ${txt}`, 'error' );
+      return;
+    }
+    originalConfigJson = JSON.stringify( config );
+    dirty = false;
+    updateSaveBar();
+    showMessage( 'Settings saved', 'success' );
+    if (previewInUse) await stopPreview();
+    loadStatus();
   } catch (error) {
-    showMessage( 'Failed to save configuration', 'error' );
+    showMessage( 'Failed to save settings', 'error' );
   }
+}
+
+function discardChanges () {
+  config = JSON.parse( originalConfigJson );
+  dirty = false;
+  updateSaveBar();
+  updateUI();
+  if (previewInUse) stopPreview();
+  showMessage( 'Changes discarded', 'success' );
 }
 
 function showMessage(text, type) {
@@ -348,7 +461,14 @@ function showMessage(text, type) {
   setTimeout( () => msg.style.display = 'none', 3000 );
 }
 
-// Initialize
+window.addEventListener( 'beforeunload', (e) => {
+  if (dirty) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+} );
+
 loadConfig();
 loadStatus();
-setInterval( loadStatus, 5000 );
+statusTimer = setInterval( loadStatus, 5000 );
+clockTimer = setInterval( tickClocks, 1000 );

@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# picp — wirelessly copy a local file to a HallwayLedBar device
+# Usage:
+#   picp <local-file> <remote-path>
+#   picp -h <host> <local-file> <remote-path>
+#   picp [--reboot] <local-file> <remote-path>
+#   PICO_HOST=hallway.local picp <local-file> <remote-path>
+#
+# Examples:
+#   picp lib/scheduler.py lib/scheduler.py
+#   picp -h 192.168.1.42 web/index.html web/index.html
+#   picp --reboot lib/scheduler.py lib/scheduler.py
+#
+# Computes a SHA-256 of the local file and sends it as a query parameter; the
+# device verifies the hash before atomically replacing the target. The body is
+# sent as a single application/octet-stream POST. With --reboot, POSTs to
+# /api/reboot after a successful upload (use when uploading .py files).
+
+set -euo pipefail
+
+HOST="${PICO_HOST:-hallway.local}"
+REBOOT=0
+
+usage() {
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+    exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--host)
+            [[ $# -ge 2 ]] || usage
+            HOST="$2"; shift 2 ;;
+        --reboot)
+            REBOOT=1; shift ;;
+        --help)
+            usage ;;
+        -*)
+            echo "unknown option: $1" >&2; usage ;;
+        *)
+            break ;;
+    esac
+done
+
+[[ $# -eq 2 ]] || usage
+
+LOCAL="$1"
+REMOTE="$2"
+
+[[ -f "$LOCAL" ]] || { echo "no such file: $LOCAL" >&2; exit 2; }
+
+REMOTE="${REMOTE#/}"
+case "$REMOTE" in
+    *..*) echo "remote path may not contain '..'" >&2; exit 2 ;;
+    "")   echo "remote path required" >&2; exit 2 ;;
+esac
+
+if command -v shasum >/dev/null 2>&1; then
+    SHA="$(shasum -a 256 "$LOCAL" | awk '{print $1}')"
+elif command -v sha256sum >/dev/null 2>&1; then
+    SHA="$(sha256sum "$LOCAL" | awk '{print $1}')"
+else
+    echo "need shasum or sha256sum on PATH" >&2; exit 3
+fi
+
+if SIZE=$(stat -f%z "$LOCAL" 2>/dev/null); then
+    : # macOS / BSD
+else
+    SIZE=$(stat -c%s "$LOCAL")  # GNU
+fi
+
+urlenc() {
+    local s="$1" out="" i c
+    for ((i=0; i<${#s}; i++)); do
+        c="${s:i:1}"
+        case "$c" in
+            [a-zA-Z0-9._~/-]) out+="$c" ;;
+            *) out+=$(printf '%%%02X' "'$c") ;;
+        esac
+    done
+    printf '%s' "$out"
+}
+ENC_REMOTE="$(urlenc "$REMOTE")"
+
+URL="http://${HOST}/api/files/upload?path=${ENC_REMOTE}&sha256=${SHA}&size=${SIZE}"
+
+echo "→ ${HOST}  ${LOCAL}  →  ${REMOTE}  (${SIZE} B, sha=${SHA:0:12}…)"
+
+HTTP_CODE=$(curl -sS -o /tmp/picp.$$.json -w '%{http_code}' \
+    -H 'Content-Type: application/octet-stream' \
+    --data-binary "@${LOCAL}" \
+    "$URL") || { echo "upload failed (curl exit $?)" >&2; rm -f /tmp/picp.$$.json; exit 4; }
+
+BODY=$(cat /tmp/picp.$$.json 2>/dev/null || true)
+rm -f /tmp/picp.$$.json
+
+if [[ "$HTTP_CODE" == "200" ]]; then
+    echo "✓ ok  $BODY"
+else
+    echo "✗ HTTP $HTTP_CODE  $BODY" >&2
+    exit 5
+fi
+
+if [[ "$REBOOT" -eq 1 ]]; then
+    echo "→ ${HOST}  rebooting"
+    REBOOT_CODE=$(curl -sS -o /tmp/picp.$$.reboot -w '%{http_code}' \
+        -X POST "http://${HOST}/api/reboot") || {
+        echo "reboot request failed (curl exit $?)" >&2
+        rm -f /tmp/picp.$$.reboot
+        exit 6
+    }
+    REBOOT_BODY=$(cat /tmp/picp.$$.reboot 2>/dev/null || true)
+    rm -f /tmp/picp.$$.reboot
+    if [[ "$REBOOT_CODE" == "200" ]]; then
+        echo "✓ reboot  $REBOOT_BODY"
+    else
+        echo "✗ reboot HTTP $REBOOT_CODE  $REBOOT_BODY" >&2
+        exit 6
+    fi
+fi
+
+exit 0

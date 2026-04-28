@@ -15,6 +15,7 @@ from lib.scheduler import Scheduler
 from lib.sun_times import SunTimes
 from lib.web_server import WebServer
 from lib.ntp_sync import NTPSync
+from lib.tz_offset import TzOffset
 
 
 class HallwayLedBar:
@@ -31,8 +32,9 @@ class HallwayLedBar:
         self.scheduler = Scheduler(self.storage, self.led)
         self.sun_times = SunTimes(self.storage)
         self.ntp = NTPSync(self.storage)
+        self.tz_offset = TzOffset(self.storage)
         self.buttons = ButtonHandler(self.storage, self.led)
-        self.web_server = WebServer(self.storage, self.wifi, self.scheduler, self.sun_times, self.ntp)
+        self.web_server = WebServer(self.storage, self.wifi, self.scheduler, self.sun_times, self.ntp, self.tz_offset)
 
         # State
         self.last_transition_update = 0
@@ -78,12 +80,16 @@ class HallwayLedBar:
 
     def _start_normal_mode(self):
         """Start normal operation mode"""
-        # Sync time with NTP
+        # Sync time with NTP (UTC)
         print("Synchronizing time with NTP server...")
         if self.ntp.sync_time(force=True):
             print("Time synchronized successfully")
         else:
             print("Failed to sync time, will retry later")
+
+        # Refresh tz offset from coords (cached weekly)
+        if self.storage.has_location_config():
+            self.tz_offset.refresh()
 
         # Fetch sun times
         if self.storage.has_location_config():
@@ -124,6 +130,8 @@ class HallwayLedBar:
 
     def _update_mode(self):
         """Update LED state based on current mode"""
+        if self.web_server and getattr(self.web_server, "preview_active", False):
+            return
         mode = self.storage.get_mode()
 
         if mode == "off":
@@ -154,12 +162,13 @@ class HallwayLedBar:
             self.last_ntp_sync = now
 
     def _check_sun_times_update(self):
-        """Periodically update sun times"""
+        """Periodically update sun times and tz offset (tz_offset self-throttles weekly)"""
         now = time.ticks_ms()
         if time.ticks_diff(now, self.last_sun_times_update) >= self.sun_times_update_interval:
             if self.storage.has_location_config() and self.wifi.ensure_connected():
                 print("Updating sun times...")
                 self.sun_times.update_scheduler(self.scheduler)
+                self.tz_offset.refresh()
             self.last_sun_times_update = now
 
     def run(self):

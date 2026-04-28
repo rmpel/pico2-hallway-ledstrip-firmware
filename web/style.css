@@ -137,6 +137,19 @@ h2 {
     transform: scale(1.1);
 }
 
+.btn-danger {
+    background: #dc3545;
+    color: white;
+    border: 2px solid #dc3545;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+    border-color: #c82333;
+    color: white;
+    box-shadow: 0 5px 15px rgba(220, 53, 69, 0.3);
+}
+
 /* Form */
 .form-group {
     margin-bottom: 15px;
@@ -297,6 +310,29 @@ h2 {
 .hsv-picker { display: flex; flex-direction: column; gap: 15px; }
 .hsv-slider { width: 100%; }
 .upcoming-events { font-size: 0.9em; margin-top: 10px; }
+
+/* File management page */
+.files-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+.files-table th, .files-table td {
+    text-align: left;
+    padding: 8px 6px;
+    border-bottom: 1px solid #eee;
+    vertical-align: middle;
+}
+.files-table th {
+    color: #666;
+    font-weight: 600;
+    font-size: 0.8em;
+    text-transform: uppercase;
+}
+.files-table .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+}
+.files-table td.sha { font-size: 0.75em; color: #666; }
+.btn-small { padding: 4px 10px; font-size: 0.85em; min-width: 0; }
+progress { height: 10px; border-radius: 5px; }
+
 .upcoming-event {
 	padding: 5px; margin: 3px 0; background: #f0f0f0; border-radius: 3px;
 	display: flex; justify-content: space-between;

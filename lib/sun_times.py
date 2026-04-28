@@ -44,7 +44,7 @@ class SunTimes:
         Fetch sunrise/sunset times from API
         Returns: (sunrise_seconds, sunset_seconds) or (None, None)
         """
-        lat, lon, timezone = self.storage.get_location()
+        lat, lon = self.storage.get_location()
 
         if lat is None or lon is None:
             print("Location not configured, cannot fetch sun times")

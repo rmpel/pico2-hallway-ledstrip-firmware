@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HallwayLedBar — Files</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="files.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <h1>HallwayLedBar Files</h1>
+
+        <div style="text-align:center; margin-bottom:20px;">
+            <a href="/" style="color:white; text-decoration:none;">← Back to control</a>
+        </div>
+
+        <div class="card">
+            <h2>Upload file</h2>
+            <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">
+                Pick a local file and a target path on the device (e.g. <code>lib/scheduler.py</code>).
+                The file is hashed in your browser and on the device; the upload is rejected if the
+                hashes don't match. Existing files are replaced atomically.
+                <code>/config.json</code> is protected and cannot be uploaded or deleted.
+            </p>
+            <div class="form-group">
+                <label>Target path on device:</label>
+                <input type="text" id="target-path" placeholder="lib/foo.py">
+            </div>
+            <div class="form-group">
+                <label>Local file:</label>
+                <input type="file" id="local-file">
+            </div>
+            <div class="button-group">
+                <button id="upload-btn" class="btn btn-primary">Upload</button>
+                <button id="reboot-btn" class="btn btn-danger">Reboot device</button>
+            </div>
+            <div id="upload-msg" class="message" style="display:none"></div>
+            <progress id="upload-progress" value="0" max="100"
+                      style="width:100%; height:10px; display:none; margin-top:10px;"></progress>
+        </div>
+
+        <div class="card">
+            <h2>Files on device</h2>
+            <p style="font-size: 0.9em; color: #666; margin-bottom: 15px;">
+                Click <em>SHA</em> to compute a hash on the device. Click <em>Delete</em> to remove.
+            </p>
+            <table id="file-table" class="files-table">
+                <thead>
+                    <tr><th>Path</th><th>Size</th><th>SHA-256</th><th></th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

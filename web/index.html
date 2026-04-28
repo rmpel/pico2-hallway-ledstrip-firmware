@@ -24,12 +24,22 @@
                     <span id="wifiStatus" class="value">-</span>
                 </div>
                 <div class="status-item">
-                    <span class="label">Current Time:</span>
-                    <span id="currentTime" class="value">-</span>
-                </div>
-                <div class="status-item">
                     <span class="label">Sun Times:</span>
                     <span id="sunTimes" class="value">-</span>
+                </div>
+            </div>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="label">Current Time (UTC):</span>
+                    <span id="currentTimeUtc" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Current Time (Local):</span>
+                    <span id="currentTimeLocal" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Current Time (Browser):</span>
+                    <span id="currentTimeBrowser" class="value">-</span>
                 </div>
             </div>
             <div class="upcoming-events">
@@ -81,16 +91,13 @@
             <h2>Location Settings</h2>
             <div class="form-group">
                 <label>Latitude:</label>
-                <input type="number" id="latitude" step="0.0001" placeholder="e.g., 52.3676">
+                <input type="number" id="latitude" step="0.0001" placeholder="e.g., 52.3676" oninput="locationChanged()">
             </div>
             <div class="form-group">
                 <label>Longitude:</label>
-                <input type="number" id="longitude" step="0.0001" placeholder="e.g., 4.9041">
+                <input type="number" id="longitude" step="0.0001" placeholder="e.g., 4.9041" oninput="locationChanged()">
             </div>
-            <div class="form-group">
-                <label>Timezone:</label>
-                <input type="text" id="timezone" placeholder="e.g., Europe/Amsterdam">
-            </div>
+            <p style="font-size: 0.85em; color: #666;">Timezone is derived automatically from coordinates.</p>
             <button onclick="saveLocation()" class="btn btn-primary">Save Location</button>
         </div>
 
@@ -99,9 +106,23 @@
             <h2>Schedule</h2>
             <div id="scheduleList"></div>
             <button onclick="addScheduleStep()" class="btn btn-success">+ Add Step</button>
+            <div id="saveBar" style="display:none; margin-top:15px; padding:10px; background:#fff3cd; border:1px solid #ffc107; border-radius:6px;">
+                <strong>Unsaved changes</strong> — status updates paused.
+                <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+                    <button onclick="saveSettings()" class="btn btn-primary">Save settings</button>
+                    <button onclick="discardChanges()" class="btn">Discard</button>
+                </div>
+            </div>
+            <div style="margin-top:10px;">
+                <button onclick="resumeSchedule()" class="btn">Resume schedule</button>
+            </div>
         </div>
 
         <div id="message" class="message"></div>
+
+        <div style="text-align:center; margin-top:20px;">
+            <a href="/files" style="color:white; text-decoration:underline;">File management →</a>
+        </div>
 
         <!-- Color Picker Popup -->
         <div id="colorPickerOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;" onclick="closeColorPicker()"></div>

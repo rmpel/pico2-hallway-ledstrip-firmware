@@ -50,6 +50,11 @@ class LEDController:
         s = max(0, min(100, s)) / 100.0
         v = max(0, min(100, v)) / 100.0
 
+        # Treat sub-1% brightness as fully off (avoids float-noise glow,
+        # and lets a scheduled 0% step actually go dark).
+        if v < 0.01:
+            return (0, 0, 0)
+
         if s == 0:
             # Grayscale
             val = int(v * LED_BRIGHTNESS_MAX)

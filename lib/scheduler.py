@@ -17,21 +17,36 @@ class Scheduler:
 
     def set_sun_times(self, sunrise_seconds, sunset_seconds):
         """
-        Set today's sunrise and sunset times
-        sunrise_seconds: seconds since midnight (local time)
-        sunset_seconds: seconds since midnight (local time)
+        Set today's sunrise and sunset times.
+        Values are seconds since UTC midnight (as returned by sunrise-sunset.org
+        without a tzid). They get converted to local seconds-since-midnight at
+        compare time using the cached tz offset.
         """
         self.sun_times = {
-            "sunrise": sunrise_seconds,
-            "sunset": sunset_seconds
+            "sunrise_utc": sunrise_seconds,
+            "sunset_utc": sunset_seconds
         }
-        print(f"Sun times updated: sunrise={sunrise_seconds}s, sunset={sunset_seconds}s")
+        print(f"Sun times updated (UTC): sunrise={sunrise_seconds}s, sunset={sunset_seconds}s")
+
+    def _tz_offset(self):
+        return self.storage.get_tz_offset_seconds()
 
     def _get_current_time_seconds(self):
-        """Get current time as seconds since midnight (local time)"""
-        # Note: This assumes the Pico's RTC is set to local time
-        t = time.localtime()
-        return t[3] * 3600 + t[4] * 60 + t[5]  # hours*3600 + minutes*60 + seconds
+        """Seconds-since-local-midnight, derived from UTC RTC + cached tz offset."""
+        local_epoch = time.time() + self._tz_offset()
+        return int(local_epoch % 86400)
+
+    def _sun_to_local_seconds(self, utc_seconds_since_midnight):
+        """Convert sunrise/sunset (UTC seconds since midnight) -> local seconds since midnight."""
+        return (utc_seconds_since_midnight + self._tz_offset()) % 86400
+
+    def _sun_times_local(self):
+        if self.sun_times is None:
+            return None
+        return {
+            "sunrise": self._sun_to_local_seconds(self.sun_times["sunrise_utc"]),
+            "sunset": self._sun_to_local_seconds(self.sun_times["sunset_utc"])
+        }
 
     def _calculate_step_time(self, step):
         """
@@ -50,14 +65,14 @@ class Scheduler:
             except:
                 pass
 
-        # Fall back to sun-based time
-        if self.sun_times is None:
+        # Fall back to sun-based time (convert stored UTC sun times to local)
+        local = self._sun_times_local()
+        if local is None:
             return None
 
         event = step.get("event", "sunset")
         offset_minutes = step.get("offset", 0)
-
-        base_time = self.sun_times.get(event, self.sun_times["sunset"])
+        base_time = local.get(event, local["sunset"])
         return base_time + (offset_minutes * 60)
 
     def _get_sorted_steps(self):

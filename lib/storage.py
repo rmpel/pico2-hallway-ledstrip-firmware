@@ -50,19 +50,21 @@ class Storage:
         wifi_config = old_config.get("wifi", {"ssid": None, "password": None})
 
         # Extract settings
+        old_loc = old_config.get("location", {})
         settings = {
-            "location": old_config.get("location", {
-                "latitude": DEFAULT_LATITUDE,
-                "longitude": DEFAULT_LONGITUDE,
-                "timezone": DEFAULT_TIMEZONE
-            }),
+            "location": {
+                "latitude": old_loc.get("latitude", DEFAULT_LATITUDE),
+                "longitude": old_loc.get("longitude", DEFAULT_LONGITUDE)
+            },
             "manual": old_config.get("manual", {
                 "brightness": DEFAULT_MANUAL_BRIGHTNESS,
                 "hue": DEFAULT_MANUAL_HUE,
                 "saturation": DEFAULT_MANUAL_SATURATION
             }),
             "schedule": old_config.get("schedule", DEFAULT_SCHEDULE),
-            "mode": old_config.get("mode", "auto")
+            "mode": old_config.get("mode", "auto"),
+            "tz_offset_seconds": 0,
+            "tz_offset_updated": 0
         }
 
         # Save in new format
@@ -91,8 +93,7 @@ class Storage:
         return {
             "location": {
                 "latitude": DEFAULT_LATITUDE,
-                "longitude": DEFAULT_LONGITUDE,
-                "timezone": DEFAULT_TIMEZONE
+                "longitude": DEFAULT_LONGITUDE
             },
             "manual": {
                 "brightness": DEFAULT_MANUAL_BRIGHTNESS,
@@ -100,7 +101,9 @@ class Storage:
                 "saturation": DEFAULT_MANUAL_SATURATION
             },
             "schedule": DEFAULT_SCHEDULE,
-            "mode": "auto"
+            "mode": "auto",
+            "tz_offset_seconds": 0,
+            "tz_offset_updated": 0
         }
 
     def _save_wifi_config(self):
@@ -142,19 +145,30 @@ class Storage:
 
     # Location settings
     def get_location(self):
-        """Returns (latitude, longitude, timezone)"""
+        """Returns (latitude, longitude)"""
         loc = self.settings["location"]
-        return (loc["latitude"], loc["longitude"], loc["timezone"])
+        return (loc.get("latitude"), loc.get("longitude"))
 
-    def set_location(self, latitude, longitude, timezone):
+    def set_location(self, latitude, longitude):
         self.settings["location"]["latitude"] = latitude
         self.settings["location"]["longitude"] = longitude
-        self.settings["location"]["timezone"] = timezone
         self._save_settings()
 
     def has_location_config(self):
         loc = self.settings["location"]
-        return loc["latitude"] is not None and loc["longitude"] is not None
+        return loc.get("latitude") is not None and loc.get("longitude") is not None
+
+    # Timezone offset (cached, refreshed from coords)
+    def get_tz_offset_seconds(self):
+        return int(self.settings.get("tz_offset_seconds", 0) or 0)
+
+    def get_tz_offset_updated(self):
+        return int(self.settings.get("tz_offset_updated", 0) or 0)
+
+    def set_tz_offset(self, offset_seconds, updated_utc):
+        self.settings["tz_offset_seconds"] = int(offset_seconds)
+        self.settings["tz_offset_updated"] = int(updated_utc)
+        self._save_settings()
 
     # Manual mode settings
     def get_manual_settings(self):
@@ -222,9 +236,15 @@ class Storage:
 
     def update_settings(self, new_settings):
         """Update settings (for web API) - excludes WiFi credentials"""
-        # Update only the fields that are provided, don't replace everything
-        # This prevents accidentally overwriting mode when saving schedule/location
         for key in new_settings:
-            if key != "mode":  # Mode has its own dedicated setter
+            if key == "mode":
+                continue
+            if key == "location" and isinstance(new_settings[key], dict):
+                loc = {
+                    "latitude": new_settings[key].get("latitude"),
+                    "longitude": new_settings[key].get("longitude")
+                }
+                self.settings["location"] = loc
+            else:
                 self.settings[key] = new_settings[key]
         self._save_settings()
