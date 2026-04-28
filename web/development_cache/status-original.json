@@ -1,0 +1,93 @@
+{
+    "schedule_info" : {
+        "next_step" : {
+            "brightness" : 0,
+            "hue" : 0,
+            "saturation" : 0,
+            "time" : "16:29"
+        },
+        "progress" : 0.5179284,
+        "upcoming_events" : [
+            {
+                "step" : {
+                    "brightness" : 0,
+                    "hue" : 0,
+                    "saturation" : 0,
+                    "time" : "16:29"
+                },
+                "time" : 59340,
+                "seconds_until" : 16429
+            },
+            {
+                "step" : {
+                    "brightness" : 100,
+                    "hue" : 56,
+                    "saturation" : 61,
+                    "time" : "16:30"
+                },
+                "time" : 59400,
+                "seconds_until" : 16489
+            },
+            {
+                "step" : {
+                    "brightness" : 100,
+                    "hue" : 35,
+                    "saturation" : 51,
+                    "time" : "23:58"
+                },
+                "time" : 86280,
+                "seconds_until" : 43369
+            },
+            {
+                "step" : {
+                    "brightness" : 0,
+                    "hue" : 0,
+                    "saturation" : 0,
+                    "time" : "23:59"
+                },
+                "time" : 86340,
+                "seconds_until" : 43429
+            },
+            {
+                "step" : {
+                    "brightness" : 0,
+                    "hue" : 0,
+                    "saturation" : 0,
+                    "time" : "06:00"
+                },
+                "time" : 108000,
+                "seconds_until" : 65089
+            }
+        ],
+        "current_step" : {
+            "brightness" : 0,
+            "hue" : 0,
+            "saturation" : 0,
+            "time" : "07:01"
+        },
+        "next_event_in_seconds" : 16429
+    },
+    "current_time" : "11:55:11",
+    "mode" : "auto",
+    "location_configured" : true,
+    "current_time_seconds" : 42911,
+    "sun_times" : {
+        "sunset" : "18:09",
+        "sunrise" : "05:19"
+    },
+    "ntp" : {
+        "last_sync_seconds_ago" : 1054,
+        "synced" : true
+    },
+    "wifi" : {
+        "ssid" : "SpaceBallsTheMeshWiFi",
+        "ip" : "192.168.41.107",
+        "mode" : "sta",
+        "connected" : true
+    },
+    "manual" : {
+        "saturation" : 78,
+        "brightness" : 100,
+        "hue" : 46
+    }
+}

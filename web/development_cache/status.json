@@ -1,0 +1,132 @@
+{
+    "schedule_info": {
+        "next_step": {
+            "step": {
+                "brightness": 0,
+                "hue": 0,
+                "saturation": 0,
+                "time": "16:29"
+            },
+            "time": 59340,
+            "seconds_until": 26036
+        },
+        "progress": 52078.334624413146,
+        "upcoming_events": [
+            {
+                "step": {
+                    "brightness": 0,
+                    "hue": 0,
+                    "saturation": 0,
+                    "time": "16:29"
+                },
+                "time": 59340,
+                "seconds_until": 26036
+            },
+            {
+                "step": {
+                    "brightness": 100,
+                    "hue": 56,
+                    "saturation": 61,
+                    "time": "16:30"
+                },
+                "time": 59400,
+                "seconds_until": 26096
+            },
+            {
+                "step": {
+                    "offset": 2,
+                    "saturation": 100,
+                    "event": "sunset",
+                    "brightness": 100,
+                    "hue": 11
+                },
+                "time": 72795,
+                "seconds_until": 39491
+            },
+            {
+                "step": {
+                    "brightness": 100,
+                    "hue": 35,
+                    "saturation": 51,
+                    "time": "23:58"
+                },
+                "time": 86280,
+                "seconds_until": 52976
+            },
+            {
+                "step": {
+                    "brightness": 0,
+                    "hue": 0,
+                    "saturation": 0,
+                    "time": "23:59"
+                },
+                "time": 86340,
+                "seconds_until": 53036
+            },
+            {
+                "step": {
+                    "brightness": 0,
+                    "hue": 0,
+                    "saturation": 0,
+                    "time": "06:00"
+                },
+                "time": 21600,
+                "seconds_until": 74696
+            },
+            {
+                "step": {
+                    "brightness": 100,
+                    "hue": 54,
+                    "saturation": 25,
+                    "time": "07:00"
+                },
+                "time": 25200,
+                "seconds_until": 78296
+            },
+            {
+                "step": {
+                    "brightness": 0,
+                    "hue": 0,
+                    "saturation": 0,
+                    "time": "07:01"
+                },
+                "time": 25260,
+                "seconds_until": 78356
+            }
+        ],
+        "current_step": {
+            "step": {
+                "brightness": 0,
+                "hue": 0,
+                "saturation": 0,
+                "time": "07:01"
+            },
+            "time": 25260,
+            "seconds_until": 78356
+        },
+        "next_event_in_seconds": 26036
+    },
+    "current_time": "09:15:04",
+    "mode": "on",
+    "location_configured": true,
+    "current_time_seconds": 33304,
+    "sun_times": {
+        "sunset": "20:11",
+        "sunrise": "07:16"
+    },
+    "ntp": {
+        "last_sync_seconds_ago": 0,
+        "synced": true
+    },
+    "wifi": {
+        "ssid": "SpaceBallsTheMeshWiFi",
+        "ip": "192.168.41.107",
+        "mode": "sta",
+        "connected": true
+    },
+    "manual": {
+        "brightness": 100,
+        "saturation": 78,
+        "hue": 46
+    }
+}

@@ -1,0 +1,230 @@
+# Non-volatile storage manager using JSON
+
+import json
+from config import (
+    DEFAULT_SCHEDULE,
+    DEFAULT_MANUAL_BRIGHTNESS,
+    DEFAULT_MANUAL_HUE,
+    DEFAULT_MANUAL_SATURATION,
+    DEFAULT_LATITUDE,
+    DEFAULT_LONGITUDE,
+    DEFAULT_TIMEZONE
+)
+
+WIFI_CONFIG_FILE = "/config.json"
+SETTINGS_FILE = "/settings.json"
+
+
+class Storage:
+    def __init__(self):
+        """Initialize storage and load config from files"""
+        self.wifi_config = self._load_wifi_config()
+        self.settings = self._load_settings()
+
+    def _load_wifi_config(self):
+        """Load WiFi configuration (separate file for security)"""
+        try:
+            with open(WIFI_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+                print(f"Loaded WiFi config from {WIFI_CONFIG_FILE}")
+
+                # Handle old format migration
+                if "wifi" in config:
+                    print("Migrating old config format...")
+                    wifi_config = config["wifi"]
+                    # Save in new format
+                    self._migrate_old_config(config)
+                    return wifi_config
+                else:
+                    return config
+
+        except (OSError, ValueError) as e:
+            print(f"No WiFi config found, creating default: {e}")
+            return {"ssid": None, "password": None}
+
+    def _migrate_old_config(self, old_config):
+        """Migrate old single-file config to new split format"""
+        print("Migrating old config format to new split format...")
+
+        # Extract WiFi config
+        wifi_config = old_config.get("wifi", {"ssid": None, "password": None})
+
+        # Extract settings
+        settings = {
+            "location": old_config.get("location", {
+                "latitude": DEFAULT_LATITUDE,
+                "longitude": DEFAULT_LONGITUDE,
+                "timezone": DEFAULT_TIMEZONE
+            }),
+            "manual": old_config.get("manual", {
+                "brightness": DEFAULT_MANUAL_BRIGHTNESS,
+                "hue": DEFAULT_MANUAL_HUE,
+                "saturation": DEFAULT_MANUAL_SATURATION
+            }),
+            "schedule": old_config.get("schedule", DEFAULT_SCHEDULE),
+            "mode": old_config.get("mode", "auto")
+        }
+
+        # Save in new format
+        try:
+            with open(WIFI_CONFIG_FILE, 'w') as f:
+                json.dump(wifi_config, f)
+            with open(SETTINGS_FILE, 'w') as f:
+                json.dump(settings, f)
+            print("Migration complete")
+        except Exception as e:
+            print(f"Migration failed: {e}")
+
+    def _load_settings(self):
+        """Load user settings from JSON file"""
+        try:
+            with open(SETTINGS_FILE, 'r') as f:
+                settings = json.load(f)
+                print(f"Loaded settings from {SETTINGS_FILE}")
+                return settings
+        except (OSError, ValueError) as e:
+            print(f"No settings file found, creating defaults: {e}")
+            return self._create_default_settings()
+
+    def _create_default_settings(self):
+        """Create default settings"""
+        return {
+            "location": {
+                "latitude": DEFAULT_LATITUDE,
+                "longitude": DEFAULT_LONGITUDE,
+                "timezone": DEFAULT_TIMEZONE
+            },
+            "manual": {
+                "brightness": DEFAULT_MANUAL_BRIGHTNESS,
+                "hue": DEFAULT_MANUAL_HUE,
+                "saturation": DEFAULT_MANUAL_SATURATION
+            },
+            "schedule": DEFAULT_SCHEDULE,
+            "mode": "auto"
+        }
+
+    def _save_wifi_config(self):
+        """Save WiFi configuration"""
+        try:
+            with open(WIFI_CONFIG_FILE, 'w') as f:
+                json.dump(self.wifi_config, f)
+            print(f"WiFi config saved")
+            return True
+        except OSError as e:
+            print(f"Failed to save WiFi config: {e}")
+            return False
+
+    def _save_settings(self):
+        """Save user settings"""
+        try:
+            with open(SETTINGS_FILE, 'w') as f:
+                json.dump(self.settings, f)
+            print(f"Settings saved")
+            return True
+        except OSError as e:
+            print(f"Failed to save settings: {e}")
+            return False
+
+    # WiFi settings
+    def get_wifi_ssid(self):
+        return self.wifi_config.get("ssid")
+
+    def get_wifi_password(self):
+        return self.wifi_config.get("password")
+
+    def set_wifi_credentials(self, ssid, password):
+        self.wifi_config["ssid"] = ssid
+        self.wifi_config["password"] = password
+        self._save_wifi_config()
+
+    def has_wifi_config(self):
+        return self.wifi_config.get("ssid") is not None
+
+    # Location settings
+    def get_location(self):
+        """Returns (latitude, longitude, timezone)"""
+        loc = self.settings["location"]
+        return (loc["latitude"], loc["longitude"], loc["timezone"])
+
+    def set_location(self, latitude, longitude, timezone):
+        self.settings["location"]["latitude"] = latitude
+        self.settings["location"]["longitude"] = longitude
+        self.settings["location"]["timezone"] = timezone
+        self._save_settings()
+
+    def has_location_config(self):
+        loc = self.settings["location"]
+        return loc["latitude"] is not None and loc["longitude"] is not None
+
+    # Manual mode settings
+    def get_manual_settings(self):
+        """Returns (brightness, hue, saturation)"""
+        m = self.settings["manual"]
+        return (m["brightness"], m["hue"], m["saturation"])
+
+    def set_manual_settings(self, brightness, hue, saturation):
+        """Set all manual settings at once"""
+        self.settings["manual"]["brightness"] = max(0, min(100, brightness))
+        self.settings["manual"]["hue"] = max(0, min(360, hue))
+        self.settings["manual"]["saturation"] = max(0, min(100, saturation))
+        self._save_settings()
+
+    def set_manual_brightness(self, brightness):
+        self.settings["manual"]["brightness"] = max(0, min(100, brightness))
+        self._save_settings()
+
+    def set_manual_hue(self, hue):
+        self.settings["manual"]["hue"] = max(0, min(360, hue))
+        self._save_settings()
+
+    def set_manual_saturation(self, saturation):
+        self.settings["manual"]["saturation"] = max(0, min(100, saturation))
+        self._save_settings()
+
+    # Mode
+    def get_mode(self):
+        return self.settings.get("mode", "auto")
+
+    def set_mode(self, mode):
+        """Set mode: 'auto', 'on', 'rainbow', or 'off'"""
+        if mode in ["auto", "on", "rainbow", "off"]:
+            self.settings["mode"] = mode
+            self._save_settings()
+
+    # Schedule
+    def get_schedule(self):
+        return self.settings.get("schedule", [])
+
+    def set_schedule(self, schedule):
+        """
+        Set schedule
+        schedule: list of dicts with keys: event, offset, brightness, hue, saturation
+        """
+        self.settings["schedule"] = schedule
+        self._save_settings()
+
+    def add_schedule_step(self, step):
+        """Add a schedule step"""
+        if "schedule" not in self.settings:
+            self.settings["schedule"] = []
+        self.settings["schedule"].append(step)
+        self._save_settings()
+
+    def remove_schedule_step(self, index):
+        """Remove a schedule step by index"""
+        if 0 <= index < len(self.settings.get("schedule", [])):
+            del self.settings["schedule"][index]
+            self._save_settings()
+
+    def get_all_settings(self):
+        """Get all settings (for web API) - excludes WiFi credentials"""
+        return self.settings
+
+    def update_settings(self, new_settings):
+        """Update settings (for web API) - excludes WiFi credentials"""
+        # Update only the fields that are provided, don't replace everything
+        # This prevents accidentally overwriting mode when saving schedule/location
+        for key in new_settings:
+            if key != "mode":  # Mode has its own dedicated setter
+                self.settings[key] = new_settings[key]
+        self._save_settings()

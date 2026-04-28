@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HallwayLedBar Control</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="script.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>HallwayLedBar Control</h1>
+
+        <!-- Status Section -->
+        <div class="card">
+            <h2>Status</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="label">Mode:</span>
+                    <span id="currentMode" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">WiFi:</span>
+                    <span id="wifiStatus" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Current Time:</span>
+                    <span id="currentTime" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Sun Times:</span>
+                    <span id="sunTimes" class="value">-</span>
+                </div>
+            </div>
+            <div class="upcoming-events">
+                <strong>Upcoming Events:</strong>
+                <div id="upcomingEvents"></div>
+            </div>
+        </div>
+
+        <!-- Mode Control -->
+        <div class="card">
+            <h2>Mode Control</h2>
+            <div class="button-group mode-control">
+                <button onclick="setMode('off')" class="btn mode-off">Off</button>
+                <button onclick="setMode('auto')" class="btn mode-auto">Auto</button>
+                <button onclick="setMode('on')" class="btn mode-on">On</button>
+                <button onclick="setMode('rainbow')" class="btn mode-rainbow">Rainbow</button>
+            </div>
+        </div>
+
+        <!-- Manual Color Control (for ON and Rainbow modes) -->
+        <div class="card">
+            <h2>Manual Color (ON/Rainbow Mode)</h2>
+            <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+                <strong>ON mode:</strong> Uses all three values (hue, saturation, brightness)<br>
+                <strong>Rainbow mode:</strong> Uses saturation and brightness, hue is animated
+            </p>
+            <div style="display: flex; gap: 20px; align-items: center; margin-bottom: 15px;">
+                <div id="manualColorPreview" style="width: 80px; height: 80px; border-radius: 10px; border: 2px solid #ddd;"></div>
+                <div style="flex: 1;">
+                    <div style="margin-bottom: 10px;">
+                        <label>Hue (0-360°): <span id="manualHueValue">180</span>°</label>
+                        <input type="range" id="manualHue" class="hsv-slider" min="0" max="360" value="180" oninput="updateManualColor()">
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label>Saturation (0-100%): <span id="manualSatValue">100</span>%</label>
+                        <input type="range" id="manualSat" class="hsv-slider" min="0" max="100" value="100" oninput="updateManualColor()">
+                    </div>
+                    <div style="margin-bottom: 10px;">
+                        <label>Brightness (0-100%): <span id="manualBrightValue">50</span>%</label>
+                        <input type="range" id="manualBright" class="hsv-slider" min="0" max="100" value="50" oninput="updateManualColor()">
+                    </div>
+                </div>
+            </div>
+            <button onclick="saveManualColor()" class="btn btn-primary">Save Manual Color</button>
+        </div>
+
+        <!-- Location Settings -->
+        <div class="card">
+            <h2>Location Settings</h2>
+            <div class="form-group">
+                <label>Latitude:</label>
+                <input type="number" id="latitude" step="0.0001" placeholder="e.g., 52.3676">
+            </div>
+            <div class="form-group">
+                <label>Longitude:</label>
+                <input type="number" id="longitude" step="0.0001" placeholder="e.g., 4.9041">
+            </div>
+            <div class="form-group">
+                <label>Timezone:</label>
+                <input type="text" id="timezone" placeholder="e.g., Europe/Amsterdam">
+            </div>
+            <button onclick="saveLocation()" class="btn btn-primary">Save Location</button>
+        </div>
+
+        <!-- Schedule Editor -->
+        <div class="card">
+            <h2>Schedule</h2>
+            <div id="scheduleList"></div>
+            <button onclick="addScheduleStep()" class="btn btn-success">+ Add Step</button>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <!-- Color Picker Popup -->
+        <div id="colorPickerOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;" onclick="closeColorPicker()"></div>
+        <div id="colorPickerPopup" class="color-picker-popup">
+            <h3>Select Color</h3>
+            <div class="hsv-picker">
+                <div>
+                    <label>Hue (0-360°)</label>
+                    <input type="range" id="hueSlider" class="hsv-slider" min="0" max="360" oninput="updateColorPreview()">
+                    <span id="hueValue">180</span>°
+                </div>
+                <div>
+                    <label>Saturation (0-100%)</label>
+                    <input type="range" id="satSlider" class="hsv-slider" min="0" max="100" oninput="updateColorPreview()">
+                    <span id="satValue">100</span>%
+                </div>
+                <div>
+                    <label>Brightness (0-100%)</label>
+                    <input type="range" id="brightSlider" class="hsv-slider" min="0" max="100" oninput="updateColorPreview()">
+                    <span id="brightValue">50</span>%
+                </div>
+                <div style="text-align:center;">
+                    <div id="pickerPreview" style="width:100px; height:100px; margin:10px auto; border-radius:10px; border:2px solid #ddd;"></div>
+                </div>
+                <button onclick="applyColor()" class="btn btn-primary">Apply</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

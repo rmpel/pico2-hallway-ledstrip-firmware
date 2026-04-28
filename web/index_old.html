@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HallwayLedBar Control</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>HallwayLedBar Control</h1>
+
+        <!-- Status Section -->
+        <div class="card">
+            <h2>Status</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="label">Mode:</span>
+                    <span id="currentMode" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">WiFi:</span>
+                    <span id="wifiStatus" class="value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="label">Next Event:</span>
+                    <span id="nextEvent" class="value">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mode Control -->
+        <div class="card">
+            <h2>Mode Control</h2>
+            <div class="button-group">
+                <button onclick="setMode('off')" class="btn">Off</button>
+                <button onclick="setMode('auto')" class="btn btn-primary">Auto</button>
+                <button onclick="setMode('on')" class="btn">On</button>
+            </div>
+        </div>
+
+        <!-- Location Settings -->
+        <div class="card">
+            <h2>Location Settings</h2>
+            <div class="form-group">
+                <label>Latitude:</label>
+                <input type="number" id="latitude" step="0.0001" placeholder="e.g., 52.3676">
+            </div>
+            <div class="form-group">
+                <label>Longitude:</label>
+                <input type="number" id="longitude" step="0.0001" placeholder="e.g., 4.9041">
+            </div>
+            <div class="form-group">
+                <label>Timezone:</label>
+                <input type="text" id="timezone" placeholder="e.g., Europe/Amsterdam">
+            </div>
+            <button onclick="saveLocation()" class="btn btn-primary">Save Location</button>
+        </div>
+
+        <!-- Schedule Editor -->
+        <div class="card">
+            <h2>Schedule</h2>
+            <div id="scheduleList" class="schedule-list"></div>
+            <button onclick="addScheduleStep()" class="btn btn-success">+ Add Step</button>
+        </div>
+
+        <div id="message" class="message"></div>
+    </div>
+
+    <script>
+        let config = {};
+
+        // Load initial config
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                config = await response.json();
+                updateUI();
+            } catch (error) {
+                showMessage('Failed to load configuration', 'error');
+            }
+        }
+
+        // Load status
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const status = await response.json();
+
+                document.getElementById('currentMode').textContent = status.mode.toUpperCase();
+                document.getElementById('wifiStatus').textContent = status.wifi.connected ?
+                    `Connected (${status.wifi.ip})` : 'Disconnected';
+
+                if (status.schedule_info && status.schedule_info.next_step) {
+                    const next = status.schedule_info.next_step;
+                    const minutes = Math.floor(status.schedule_info.next_event_in_seconds / 60);
+                    const offsetStr = next.offset >= 0 ? `+${next.offset}` : next.offset;
+                    document.getElementById('nextEvent').textContent =
+                        `${next.event} ${offsetStr}m (${next.brightness}%) in ${minutes}min`;
+                } else {
+                    document.getElementById('nextEvent').textContent = 'N/A';
+                }
+            } catch (error) {
+                console.error('Failed to load status:', error);
+            }
+        }
+
+        // Update UI from config
+        function updateUI() {
+            // Location
+            document.getElementById('latitude').value = config.location?.latitude || '';
+            document.getElementById('longitude').value = config.location?.longitude || '';
+            document.getElementById('timezone').value = config.location?.timezone || 'UTC';
+
+            // Schedule
+            renderSchedule();
+        }
+
+        // Render schedule
+        function renderSchedule() {
+            const container = document.getElementById('scheduleList');
+            container.innerHTML = '';
+
+            if (!config.schedule || config.schedule.length === 0) {
+                container.innerHTML = '<p>No schedule steps defined.</p>';
+                return;
+            }
+
+            config.schedule.forEach((step, index) => {
+                const stepDiv = document.createElement('div');
+                stepDiv.className = 'schedule-step';
+                stepDiv.draggable = true;
+                stepDiv.dataset.index = index;
+
+                stepDiv.innerHTML = `
+                    <div class="drag-handle">⋮⋮</div>
+                    <div class="step-content">
+                        <select onchange="updateStep(${index}, 'event', this.value)">
+                            <option value="sunrise" ${step.event === 'sunrise' ? 'selected' : ''}>Sunrise</option>
+                            <option value="sunset" ${step.event === 'sunset' ? 'selected' : ''}>Sunset</option>
+                        </select>
+                        <input type="number" value="${step.offset}"
+                               onchange="updateStep(${index}, 'offset', parseInt(this.value))"
+                               placeholder="Offset (min)" style="width: 100px;">
+                        <input type="number" value="${step.brightness}" min="0" max="100"
+                               onchange="updateStep(${index}, 'brightness', parseInt(this.value))"
+                               placeholder="Brightness %" style="width: 80px;">
+                        <input type="number" value="${step.hue}" min="0" max="360"
+                               onchange="updateStep(${index}, 'hue', parseInt(this.value))"
+                               placeholder="Hue °" style="width: 80px;">
+                        <input type="number" value="${step.saturation}" min="0" max="100"
+                               onchange="updateStep(${index}, 'saturation', parseInt(this.value))"
+                               placeholder="Sat %" style="width: 80px;">
+                        <button onclick="removeStep(${index})" class="btn-delete">×</button>
+                    </div>
+                    <div class="step-preview" style="background: ${hsvToRgbCss(step.hue, step.saturation, step.brightness)}"></div>
+                `;
+
+                // Drag and drop handlers
+                stepDiv.addEventListener('dragstart', handleDragStart);
+                stepDiv.addEventListener('dragover', handleDragOver);
+                stepDiv.addEventListener('drop', handleDrop);
+                stepDiv.addEventListener('dragend', handleDragEnd);
+
+                container.appendChild(stepDiv);
+            });
+        }
+
+        // HSV to RGB for preview
+        function hsvToRgbCss(h, s, v) {
+            s = s / 100;
+            v = v / 100;
+            const c = v * s;
+            const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+            const m = v - c;
+            let r, g, b;
+
+            if (h < 60) { r = c; g = x; b = 0; }
+            else if (h < 120) { r = x; g = c; b = 0; }
+            else if (h < 180) { r = 0; g = c; b = x; }
+            else if (h < 240) { r = 0; g = x; b = c; }
+            else if (h < 300) { r = x; g = 0; b = c; }
+            else { r = c; g = 0; b = x; }
+
+            return `rgb(${Math.round((r+m)*255)}, ${Math.round((g+m)*255)}, ${Math.round((b+m)*255)})`;
+        }
+
+        // Drag and drop
+        let draggedElement = null;
+
+        function handleDragStart(e) {
+            draggedElement = this;
+            this.style.opacity = '0.4';
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            return false;
+        }
+
+        function handleDrop(e) {
+            e.stopPropagation();
+            e.preventDefault();
+
+            if (draggedElement !== this) {
+                const fromIndex = parseInt(draggedElement.dataset.index);
+                const toIndex = parseInt(this.dataset.index);
+
+                const item = config.schedule.splice(fromIndex, 1)[0];
+                config.schedule.splice(toIndex, 0, item);
+
+                saveConfig();
+            }
+            return false;
+        }
+
+        function handleDragEnd(e) {
+            this.style.opacity = '1';
+        }
+
+        // Update step
+        function updateStep(index, field, value) {
+            config.schedule[index][field] = value;
+            saveConfig();
+        }
+
+        // Add step
+        function addScheduleStep() {
+            if (!config.schedule) {
+                config.schedule = [];
+            }
+            config.schedule.push({
+                event: 'sunset',
+                offset: 0,
+                brightness: 50,
+                hue: 180,
+                saturation: 100
+            });
+            saveConfig();
+        }
+
+        // Remove step
+        function removeStep(index) {
+            config.schedule.splice(index, 1);
+            saveConfig();
+        }
+
+        // Save location
+        async function saveLocation() {
+            config.location = {
+                latitude: parseFloat(document.getElementById('latitude').value),
+                longitude: parseFloat(document.getElementById('longitude').value),
+                timezone: document.getElementById('timezone').value
+            };
+            await saveConfig();
+            showMessage('Location saved successfully', 'success');
+        }
+
+        // Set mode
+        async function setMode(mode) {
+            try {
+                await fetch('/api/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
+                showMessage(`Mode set to ${mode.toUpperCase()}`, 'success');
+                loadStatus();
+            } catch (error) {
+                showMessage('Failed to set mode', 'error');
+            }
+        }
+
+        // Save config
+        async function saveConfig() {
+            try {
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                renderSchedule();
+            } catch (error) {
+                showMessage('Failed to save configuration', 'error');
+            }
+        }
+
+        // Show message
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = 'message ' + type;
+            msg.style.display = 'block';
+            setTimeout(() => msg.style.display = 'none', 3000);
+        }
+
+        // Initialize
+        loadConfig();
+        loadStatus();
+        setInterval(loadStatus, 5000);  // Update status every 5 seconds
+    </script>
+</body>
+</html>

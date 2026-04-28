@@ -1,0 +1,5 @@
+# This file is ignored on PicoW MicroPython.
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/ development.php?request=%{REQUEST_URI} [L]

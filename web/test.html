@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test</title>
+</head>
+<body>
+    <h1>API Test</h1>
+    <button onclick="testStatus()">Test /api/status</button>
+    <button onclick="testConfig()">Test /api/config</button>
+    <button onclick="testMode()">Test Set Mode</button>
+    <pre id="output"></pre>
+
+    <script>
+        function log(msg) {
+            document.getElementById('output').textContent += msg + '\n';
+        }
+
+        async function testStatus() {
+            log('Testing /api/status...');
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                log('Success: ' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                log('Error: ' + error);
+            }
+        }
+
+        async function testConfig() {
+            log('Testing /api/config...');
+            try {
+                const response = await fetch('/api/config');
+                const data = await response.json();
+                log('Success: ' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                log('Error: ' + error);
+            }
+        }
+
+        async function testMode() {
+            log('Testing /api/mode...');
+            try {
+                const response = await fetch('/api/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: 'off' })
+                });
+                const data = await response.json();
+                log('Success: ' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                log('Error: ' + error);
+            }
+        }
+    </script>
+</body>
+</html>

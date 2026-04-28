@@ -1,0 +1,64 @@
+{
+    "location": {
+        "latitude": 52.028619999999997,
+        "longitude": 5.0850084000000004,
+        "timezone": "Europe/Amsterdam"
+    },
+    "schedule": [
+        {
+            "brightness": 100,
+            "hue": 54,
+            "saturation": 25,
+            "time": "07:00"
+        },
+        {
+            "brightness": 0,
+            "hue": 0,
+            "saturation": 0,
+            "time": "07:01"
+        },
+        {
+            "brightness": 0,
+            "hue": 0,
+            "saturation": 0,
+            "time": "16:29"
+        },
+        {
+            "brightness": 100,
+            "hue": 56,
+            "saturation": 61,
+            "time": "16:30"
+        },
+        {
+            "brightness": 100,
+            "hue": 35,
+            "saturation": 51,
+            "time": "23:58"
+        },
+        {
+            "brightness": 0,
+            "hue": 0,
+            "saturation": 0,
+            "time": "23:59"
+        },
+        {
+            "brightness": 0,
+            "hue": 0,
+            "saturation": 0,
+            "time": "06:00"
+        },
+        {
+            "offset": 2,
+            "saturation": 100,
+            "event": "sunset",
+            "brightness": 100,
+            "hue": 11
+        }
+    ],
+    "mode": "on",
+    "manual": {
+        "brightness": 100,
+        "saturation": 78,
+        "hue": 46
+    }
+}
