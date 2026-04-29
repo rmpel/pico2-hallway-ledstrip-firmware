@@ -56,3 +56,6 @@ DEFAULT_MANUAL_SATURATION = 100
 DEFAULT_LATITUDE = None
 DEFAULT_LONGITUDE = None
 DEFAULT_TIMEZONE = "UTC"
+
+# Nightly scheduled reboot (HH:MM, device-local). Empty string disables.
+DEFAULT_REBOOT_TIME = "03:00"

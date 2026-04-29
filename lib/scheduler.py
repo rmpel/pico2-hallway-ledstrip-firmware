@@ -14,6 +14,9 @@ class Scheduler:
         self.transition_start = None
         self.transition_end = None
         self.last_valid_hsv = None  # Cache last valid color to maintain during transitions
+        # Baseline for step-boundary detection (used by auto-resume from manual modes).
+        # None = not primed yet; otherwise = last-seen current_time_val % 86400.
+        self._step_baseline = None
 
     def set_sun_times(self, sunrise_seconds, sunset_seconds):
         """
@@ -176,10 +179,39 @@ class Scheduler:
         # Update LED
         self.led.set_color_hsv(hue, saturation, brightness)
 
+    def _current_step_key(self):
+        """Return a stable key for the active schedule step, or None if unknown."""
+        if self.sun_times is None:
+            return None
+        current_time = self._get_current_time_seconds()
+        _, _, current_time_val, _ = self._find_current_and_next_steps(current_time)
+        if current_time_val is None:
+            return None
+        # Normalize so 'yesterday's last step' (negative) compares equal to today's.
+        return current_time_val % 86400
+
+    def prime_step_baseline(self):
+        """Snapshot the active step. Subsequent step_changed_since_baseline()
+        calls return False until the active step rolls over."""
+        self._step_baseline = self._current_step_key()
+
+    def step_changed_since_baseline(self):
+        """True if the active step differs from the one captured by prime_step_baseline().
+        Returns False if the baseline isn't set or the schedule isn't ready."""
+        if self._step_baseline is None:
+            return False
+        key = self._current_step_key()
+        if key is None:
+            return False
+        return key != self._step_baseline
+
     def get_current_schedule_info(self):
         """
-        Get information about current position in schedule
-        Returns: dict with current step, next step, progress, and upcoming events
+        Get information about current position in schedule.
+        Returns dict with:
+          - current_step / next_step / progress / next_event_in_seconds (legacy)
+          - steps: full list, sorted current-first then by ascending seconds_until.
+                   Each entry has step, time, seconds_until, is_current.
         """
         if self.sun_times is None:
             return None
@@ -194,31 +226,43 @@ class Scheduler:
         total_transition_time = next_time - current_time_val
         progress = max(0.0, min(1.0, time_into_transition / total_transition_time)) if total_transition_time > 0 else 1.0
 
-        # Get all upcoming events (sorted by time)
         sorted_steps = self._get_sorted_steps()
-        upcoming = []
-        for step_time, step in sorted_steps:
-            if step_time > current_time:
-                upcoming.append({
-                    "step": step,
-                    "time": step_time,
-                    "seconds_until": int(step_time - current_time)
-                })
-            # Also check tomorrow's events
-            elif step_time + 86400 > current_time:
-                upcoming.append({
-                    "step": step,
-                    "time": step_time + 86400,
-                    "seconds_until": int(step_time + 86400 - current_time)
-                })
 
-        # Sort by time
-        upcoming.sort(key=lambda x: x["seconds_until"])
+        # Build full list. Each step's "next occurrence" is today if still
+        # ahead, else tomorrow. The current step is the one whose most-recent
+        # occurrence is current_time_val (could be today or yesterday).
+        steps_out = []
+        for step_time, step in sorted_steps:
+            is_current = (step is current_step)
+            if is_current:
+                # Use the (possibly negative) current_time_val so the UI can
+                # show "current" without it being mis-sorted as "tomorrow".
+                t = current_time_val
+                secs_until = int(t - current_time)  # <= 0
+            elif step_time > current_time:
+                t = step_time
+                secs_until = int(step_time - current_time)
+            else:
+                t = step_time + 86400
+                secs_until = int(step_time + 86400 - current_time)
+            steps_out.append({
+                "step": step,
+                "time": t,
+                "seconds_until": secs_until,
+                "is_current": is_current
+            })
+
+        # Sort: current first (its seconds_until is <= 0), then ascending.
+        steps_out.sort(key=lambda x: (0 if x["is_current"] else 1, x["seconds_until"]))
+
+        # Legacy upcoming list (kept for any consumer that still uses it).
+        upcoming = [s for s in steps_out if not s["is_current"]][:5]
 
         return {
             "current_step": current_step,
             "next_step": next_step,
             "progress": progress,
             "next_event_in_seconds": int(next_time - current_time),
-            "upcoming_events": upcoming[:5]  # Return next 5 events
+            "upcoming_events": upcoming,
+            "steps": steps_out
         }

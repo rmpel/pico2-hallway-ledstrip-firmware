@@ -37,6 +37,16 @@ async function loadStatus() {
       }
     } );
 
+    // Show 'Resume schedule at next event' toggle only outside auto mode.
+    const tempRow = document.getElementById( 'tempModeRow' );
+    const tempBox = document.getElementById( 'tempModeToggle' );
+    if (status.mode === 'auto') {
+      tempRow.style.display = 'none';
+    } else {
+      tempRow.style.display = '';
+      tempBox.checked = !!status.non_auto_is_temporary;
+    }
+
     document.getElementById( 'wifiStatus' ).textContent = status.wifi.connected ?
       `Connected (${status.wifi.ip})` : 'Disconnected';
 
@@ -69,18 +79,24 @@ async function loadStatus() {
 
     tickClocks();
 
-    if (status.schedule_info && status.schedule_info.upcoming_events) {
+    if (status.schedule_info && status.schedule_info.steps) {
       const container = document.getElementById( 'upcomingEvents' );
-      container.innerHTML = status.schedule_info.upcoming_events.map( e => {
+      container.innerHTML = status.schedule_info.steps.map( e => {
         const offsetStr = e.step.offset >= 0 ? `+${e.step.offset}` : e.step.offset;
-        const tSec = e.time % 86400;
+        const tSec = ((e.time % 86400) + 86400) % 86400;
         const hours = Math.floor( tSec / 3600 );
         const minutes = Math.floor( (tSec % 3600) / 60 );
         const timeStr = `${hours.toString().padStart( 2, '0' )}:${minutes.toString().padStart( 2, '0' )}`;
         const label = e.step.time || `${timeStr} ( ${e.step.event} ${offsetStr}m )`;
-        return `<div class="upcoming-event">
-                            <span>${label} → ${e.step.brightness}%</span>
-                            <span>${formatDuration( e.seconds_until )}</span>
+        const cls = e.is_current ? 'upcoming-event current-step' : 'upcoming-event';
+        const right = e.is_current ? 'current' : formatDuration( e.seconds_until );
+        const swatch = hsvToRgbCss( e.step.hue, e.step.saturation, e.step.brightness );
+        return `<div class="${cls}">
+                            <span class="event-left">
+                                <span class="event-swatch" style="background:${swatch}"></span>
+                                ${label} → ${e.step.brightness}%
+                            </span>
+                            <span>${right}</span>
                         </div>`;
       } ).join( '' );
     }
@@ -142,9 +158,6 @@ function updateSaveBar () {
 }
 
 function updateUI() {
-  document.getElementById( 'latitude' ).value = config.location?.latitude || '';
-  document.getElementById( 'longitude' ).value = config.location?.longitude || '';
-
   if (config.manual) {
     document.getElementById( 'manualHue' ).value = config.manual.hue ?? 180;
     document.getElementById( 'manualSat' ).value = config.manual.saturation ?? 100;
@@ -391,17 +404,18 @@ function removeStep(index) {
   renderSchedule();
 }
 
-function locationChanged () {
-  config.location = {
-    latitude: parseFloat( document.getElementById( 'latitude' ).value ),
-    longitude: parseFloat( document.getElementById( 'longitude' ).value )
-  };
-  markDirty();
-}
-
-async function saveLocation() {
-  locationChanged();
-  await saveSettings();
+async function saveTempModeFlag () {
+  const flag = document.getElementById( 'tempModeToggle' ).checked;
+  try {
+    await fetch( 'api/config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify( {non_auto_is_temporary: flag} )
+    } );
+    showMessage( flag ? 'Will resume at next event' : 'Manual mode is permanent', 'success' );
+  } catch (e) {
+    showMessage( 'Failed to save', 'error' );
+  }
 }
 
 async function setMode(mode) {

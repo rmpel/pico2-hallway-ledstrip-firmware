@@ -278,7 +278,8 @@ class WebServer:
             "tz_offset_seconds": tz_offset_seconds,
             "tz_offset_updated": tz_offset_updated,
             "sun_times": sun_times,
-            "ntp": ntp_status
+            "ntp": ntp_status,
+            "non_auto_is_temporary": self.storage.get_non_auto_is_temporary()
         }
 
         body = json.dumps(status)
@@ -708,6 +709,12 @@ class WebServer:
 
             elif path == '/files.js':
                 self._send_static(client, '/web/files.js', "application/javascript")
+
+            elif path == '/options' or path == '/options.html':
+                self._send_static(client, '/web/options.html', "text/html")
+
+            elif path == '/options.js':
+                self._send_static(client, '/web/options.js', "application/javascript")
 
             elif path == '/api/status':
                 self._handle_api_status(client)

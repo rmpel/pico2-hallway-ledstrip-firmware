@@ -40,8 +40,10 @@ class HallwayLedBar:
         self.last_transition_update = 0
         self.last_sun_times_update = 0
         self.last_ntp_sync = 0
+        self.last_reboot_check = 0
         self.sun_times_update_interval = 3600000  # Update every hour
         self.ntp_sync_interval = 3600000  # Sync time every hour
+        self.reboot_check_interval = 30000  # Check scheduled reboot every 30s
         self.web_server_running = False
 
         # Start up
@@ -80,6 +82,11 @@ class HallwayLedBar:
 
     def _start_normal_mode(self):
         """Start normal operation mode"""
+        # Pre-set RTC to (reboot_time + 1 minute) UTC so the schedule has a
+        # plausible time even before NTP completes. Also prevents a reboot
+        # loop: the scheduled-reboot check sees we're already past the window.
+        self._preset_rtc_from_reboot_time()
+
         # Sync time with NTP (UTC)
         print("Synchronizing time with NTP server...")
         if self.ntp.sync_time(force=True):
@@ -134,6 +141,24 @@ class HallwayLedBar:
             return
         mode = self.storage.get_mode()
 
+        # Auto-resume: in non-auto mode, if the schedule step rolls over
+        # (and the user opted into temporary mode), switch back to auto.
+        if mode != "auto":
+            if self.storage.get_non_auto_is_temporary():
+                if self.scheduler._step_baseline is None:
+                    self.scheduler.prime_step_baseline()
+                elif self.scheduler.step_changed_since_baseline():
+                    print("Schedule step changed; resuming auto mode")
+                    self.storage.set_mode("auto")
+                    self.scheduler._step_baseline = None
+                    mode = "auto"
+            else:
+                # Flag off -> ensure baseline is cleared so a later toggle starts fresh.
+                self.scheduler._step_baseline = None
+        else:
+            # In auto mode, no baseline needed.
+            self.scheduler._step_baseline = None
+
         if mode == "off":
             # Turn off LEDs
             self.led.turn_off()
@@ -171,6 +196,67 @@ class HallwayLedBar:
                 self.tz_offset.refresh()
             self.last_sun_times_update = now
 
+    def _parse_hhmm(self, s):
+        """Parse 'HH:MM' -> (hour, minute) or None."""
+        if not s or ":" not in s:
+            return None
+        try:
+            h, m = s.split(":", 1)
+            h = int(h)
+            m = int(m)
+            if 0 <= h < 24 and 0 <= m < 60:
+                return (h, m)
+        except ValueError:
+            pass
+        return None
+
+    def _preset_rtc_from_reboot_time(self):
+        """
+        On boot, set the RTC to (reboot_time + 1 minute) in UTC, using the
+        current RTC's date as the date. This gives the schedule a sensible
+        time before NTP arrives, and prevents an immediate re-trigger of
+        the scheduled reboot since current time is already past it.
+        """
+        hhmm = self.storage.get_reboot_time()
+        parsed = self._parse_hhmm(hhmm)
+        if parsed is None:
+            return
+        local_h, local_m = parsed
+        tz_offset = self.storage.get_tz_offset_seconds()
+        # Reboot time is local; convert to UTC seconds-since-midnight, add 60s.
+        local_secs = local_h * 3600 + local_m * 60
+        utc_secs = (local_secs - tz_offset + 60) % 86400
+        utc_h = utc_secs // 3600
+        utc_m = (utc_secs % 3600) // 60
+        utc_s = utc_secs % 60
+        rtc = machine.RTC()
+        # Keep current date; only override H/M/S. weekday=0 is fine, NTP fixes it.
+        now = rtc.datetime()
+        # MicroPython RTC tuple: (year, month, day, weekday, hour, minute, second, subsecond)
+        rtc.datetime((now[0], now[1], now[2], now[3], utc_h, utc_m, utc_s, 0))
+        print(f"Pre-set RTC to {utc_h:02d}:{utc_m:02d}:{utc_s:02d} UTC (reboot_time {hhmm} +1min)")
+
+    def _check_scheduled_reboot(self):
+        """If current local time is within a minute of reboot_time, reset."""
+        now = time.ticks_ms()
+        if time.ticks_diff(now, self.last_reboot_check) < self.reboot_check_interval:
+            return
+        self.last_reboot_check = now
+        hhmm = self.storage.get_reboot_time()
+        parsed = self._parse_hhmm(hhmm)
+        if parsed is None:
+            return
+        target_h, target_m = parsed
+        target_secs = target_h * 3600 + target_m * 60
+        # Use scheduler's local-seconds-since-midnight (UTC + tz_offset).
+        local_secs = self.scheduler._get_current_time_seconds()
+        delta = local_secs - target_secs
+        # Trigger inside [0, 60) seconds past target.
+        if 0 <= delta < 60:
+            print(f"Scheduled reboot triggered at local {local_secs}s (target {target_secs}s)")
+            time.sleep(1)
+            machine.reset()
+
     def run(self):
         """Main loop"""
         print("Entering main loop...")
@@ -201,6 +287,7 @@ class HallwayLedBar:
                 if not self.wifi.is_ap_mode:
                     self._check_ntp_sync()
                     self._check_sun_times_update()
+                    self._check_scheduled_reboot()
 
                 # Small yield to allow REPL access
                 # Note: Web server runs on core 1, so we don't handle it here

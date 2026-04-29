@@ -336,6 +336,20 @@ progress { height: 10px; border-radius: 5px; }
 .upcoming-event {
 	padding: 5px; margin: 3px 0; background: #f0f0f0; border-radius: 3px;
 	display: flex; justify-content: space-between;
+	border-left: 4px solid transparent;
+}
+.upcoming-event.current-step {
+	background: #e8f0ff;
+	border-left-color: #667eea;
+	font-weight: 600;
+}
+.event-left { display: inline-flex; align-items: center; gap: 8px; }
+.event-swatch {
+	display: inline-block;
+	width: 2em; height: 1em;
+	border-radius: 3px;
+	border: 1px solid rgba(0,0,0,0.15);
+	flex: 0 0 auto;
 }
 .schedule-step-new {
 	background: #f8f9fa; padding: 15px; margin-bottom: 10px; border-radius: 8px;

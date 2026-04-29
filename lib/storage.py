@@ -8,7 +8,8 @@ from config import (
     DEFAULT_MANUAL_SATURATION,
     DEFAULT_LATITUDE,
     DEFAULT_LONGITUDE,
-    DEFAULT_TIMEZONE
+    DEFAULT_TIMEZONE,
+    DEFAULT_REBOOT_TIME
 )
 
 WIFI_CONFIG_FILE = "/config.json"
@@ -64,7 +65,8 @@ class Storage:
             "schedule": old_config.get("schedule", DEFAULT_SCHEDULE),
             "mode": old_config.get("mode", "auto"),
             "tz_offset_seconds": 0,
-            "tz_offset_updated": 0
+            "tz_offset_updated": 0,
+            "reboot_time": DEFAULT_REBOOT_TIME
         }
 
         # Save in new format
@@ -83,6 +85,11 @@ class Storage:
             with open(SETTINGS_FILE, 'r') as f:
                 settings = json.load(f)
                 print(f"Loaded settings from {SETTINGS_FILE}")
+                # Ensure newer fields exist for older settings files.
+                if "reboot_time" not in settings:
+                    settings["reboot_time"] = DEFAULT_REBOOT_TIME
+                if "non_auto_is_temporary" not in settings:
+                    settings["non_auto_is_temporary"] = False
                 return settings
         except (OSError, ValueError) as e:
             print(f"No settings file found, creating defaults: {e}")
@@ -103,7 +110,9 @@ class Storage:
             "schedule": DEFAULT_SCHEDULE,
             "mode": "auto",
             "tz_offset_seconds": 0,
-            "tz_offset_updated": 0
+            "tz_offset_updated": 0,
+            "reboot_time": DEFAULT_REBOOT_TIME,
+            "non_auto_is_temporary": False
         }
 
     def _save_wifi_config(self):
@@ -168,6 +177,23 @@ class Storage:
     def set_tz_offset(self, offset_seconds, updated_utc):
         self.settings["tz_offset_seconds"] = int(offset_seconds)
         self.settings["tz_offset_updated"] = int(updated_utc)
+        self._save_settings()
+
+    # Scheduled reboot time (HH:MM, device-local). Empty string disables.
+    def get_reboot_time(self):
+        return self.settings.get("reboot_time", DEFAULT_REBOOT_TIME) or ""
+
+    def set_reboot_time(self, hhmm):
+        self.settings["reboot_time"] = hhmm or ""
+        self._save_settings()
+
+    # When True, manually setting mode to off/on/rainbow only lasts until the
+    # next schedule step boundary, then auto-resumes. Persisted (changes rarely).
+    def get_non_auto_is_temporary(self):
+        return bool(self.settings.get("non_auto_is_temporary", False))
+
+    def set_non_auto_is_temporary(self, flag):
+        self.settings["non_auto_is_temporary"] = bool(flag)
         self._save_settings()
 
     # Manual mode settings

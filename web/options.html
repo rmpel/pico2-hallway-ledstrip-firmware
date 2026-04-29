@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HallwayLedBar — Setup</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="options.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <h1>HallwayLedBar Setup</h1>
+
+        <div style="text-align:center; margin-bottom:20px;">
+            <a href="/" style="color:white; text-decoration:none;">← Back to control</a>
+        </div>
+
+        <div class="card">
+            <h2>Location</h2>
+            <div class="form-group">
+                <label>Latitude:</label>
+                <input type="number" id="latitude" step="0.0001" placeholder="e.g., 52.3676">
+            </div>
+            <div class="form-group">
+                <label>Longitude:</label>
+                <input type="number" id="longitude" step="0.0001" placeholder="e.g., 4.9041">
+            </div>
+            <p style="font-size: 0.85em; color: #666;">Timezone is derived automatically from coordinates.</p>
+            <button onclick="saveLocation()" class="btn btn-primary">Save Location</button>
+        </div>
+
+        <div class="card">
+            <h2>Nightly Reboot</h2>
+            <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+                The device reboots once per day at this local time to keep memory usage in check.
+                Leave empty to disable.
+            </p>
+            <div class="form-group">
+                <label>Reboot time (HH:MM, local):</label>
+                <input type="time" id="rebootTime">
+            </div>
+            <button onclick="saveRebootTime()" class="btn btn-primary">Save Reboot Time</button>
+        </div>
+
+        <div id="message" class="message"></div>
+    </div>
+</body>
+</html>
