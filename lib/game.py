@@ -158,6 +158,11 @@ class Game:
         # State
         self.state = "inactive"
         self.level = 0
+        # Total balls launched in the current game (resets on _begin_game).
+        # Used to lock out level adjustments after the player has committed.
+        self._game_shots_fired = 0
+        # Pending level-restart request (cross-thread): None or target level int.
+        self._pending_level_restart = None
 
         # Playfield bounds (cached on each game start)
         self._pf_start = LED_START_OFFSET + HOME_SKIP_LEDS
@@ -241,6 +246,32 @@ class Game:
                 return
             self._pending_upgrades.append(mix_color)
 
+    def shots_fired_this_game(self):
+        """Number of balls launched since this game started. Used to lock
+        out level adjustments after the player has committed to a level."""
+        return self._game_shots_fired
+
+    def restart_at_level(self, level):
+        """Restart the running game at a new level. No-op if any ball has
+        already been fired this game (anti-cheat for highscore)."""
+        try:
+            level = int(level)
+        except (TypeError, ValueError):
+            return
+        if level < 1:
+            level = 1
+        with self._lock:
+            if not self._is_active_unlocked():
+                return
+            if self._game_shots_fired > 0:
+                return
+            self._pending_level_restart = level
+
+    def _is_active_unlocked(self):
+        # state read is atomic; safe without holding the lock for read-only,
+        # but we're already inside the lock when called from public methods.
+        return self.state != "inactive"
+
     # ---------- Core-0 tick ----------
 
     def tick(self):
@@ -273,11 +304,13 @@ class Game:
             start_level = self._pending_start_level
             shots = self._pending_shots
             upgrades = self._pending_upgrades
+            level_restart = self._pending_level_restart
             self._pending_start = False
             self._pending_start_level = 1
             self._pending_stop = False
             self._pending_shots = []
             self._pending_upgrades = []
+            self._pending_level_restart = None
 
         if do_stop:
             self._enter_inactive(save=False)
@@ -285,6 +318,13 @@ class Game:
 
         if do_start and self.state == "inactive":
             self._begin_game(now, start_level)
+
+        if (level_restart is not None
+                and self.state != "inactive"
+                and self._game_shots_fired == 0):
+            # Re-run the intro at the new level. _begin_game also resets the
+            # shots counter (which is already 0).
+            self._begin_game(now, level_restart)
 
         if shots and self.state == "playing":
             for c in shots:
@@ -328,6 +368,7 @@ class Game:
 
     def _begin_game(self, now, level=1):
         self.level = max(1, int(level))
+        self._game_shots_fired = 0
         # Refresh playfield bounds (in case constants change at runtime — defensive)
         self._pf_start = LED_START_OFFSET + HOME_SKIP_LEDS
         self._pf_end = NUM_LEDS - 1 - END_SKIP_LEDS
@@ -499,6 +540,7 @@ class Game:
         ball = {"color": color, "pf_idx": 0, "last_step_ms": now}
         self.balls.append(ball)
         self._last_shot_ms = now
+        self._game_shots_fired += 1
 
     def _shield_exposed(self):
         # Enemy shield is exposed (and shootable) when the snake doesn't cover it.
@@ -604,6 +646,14 @@ class Game:
             return
         self.led.strip[self._pf_to_strip(pf_idx)] = rgb
 
+    def _crackle_rgb(self, brightness):
+        """White/yellow crackle: hue 40-60 (warm yellow/amber), random
+        saturation 0..100 so it flickers from pure white through to saturated
+        yellow. Brightness is the configured shield brightness (0..1)."""
+        hue = random.randint(40, 60)
+        sat = random.randint(0, 100)
+        return self.led.hsv_to_rgb(hue, sat, brightness * 100)
+
     def _render(self):
         if not self.led.enabled:
             return
@@ -625,13 +675,13 @@ class Game:
         if self.balls and s == "playing":
             self._render_balls()
 
-        # 5. Barrier (always visible during active states except gameover/win)
+        # 5. Shields (home barrier + enemy shield) crackle with random energy.
+        # Drawn AFTER the snake so the snake passes "under" them visually.
+        # Shootability of the enemy shield is independent (handled in
+        # _step_balls via _shield_exposed); rendering is purely cosmetic.
         if s in ("intro_materialize", "playing", "intro_highscore", "intro_flash"):
-            self._set_pf(self._barrier_pf_idx, COLOR_BARRIER)
-
-        # 5b. Enemy shield: only when exposed (snake's head past it toward far end).
-        if s == "playing" and self._shield_exposed():
-            self._set_pf(self._enemy_shield_pf_idx, COLOR_ENEMY_SHIELD)
+            self._set_pf(self._barrier_pf_idx, self._crackle_rgb(BARRIER_BRIGHTNESS))
+            self._set_pf(self._enemy_shield_pf_idx, self._crackle_rgb(ENEMY_SHIELD_BRIGHTNESS))
 
         # 6. State-specific overlays
         if s == "intro_flash" and self._intro_flash_on:
@@ -680,8 +730,17 @@ class Game:
             return
         # Playing/win/gameover: snake_balls[0]=head at head_pf_idx,
         # snake_balls[k] at head_pf_idx + k.
+        # Visual cheat: the enemy shield occupies its own LED. Any tail-side
+        # snake ball that would land at or past the shield position is
+        # rendered shifted +1 toward the far end, so the shield slots
+        # "between" the head-side and tail-side halves of the snake. This is
+        # geometrically incorrect (the snake gets one LED longer visually)
+        # but keeps the head ball visible whenever it crosses the shield.
+        shield_idx = self._enemy_shield_pf_idx
         for k, c in enumerate(self.snake_balls):
             pf_idx = self.head_pf_idx + k
+            if pf_idx >= shield_idx:
+                pf_idx += 1
             if 0 <= pf_idx < self._pf_len:
                 self._set_pf(pf_idx, _COLOR_MAP[c])
 

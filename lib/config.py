@@ -7,9 +7,14 @@ AP_IP = "192.168.4.1"
 
 # GPIO pins
 PIN_LED_STRIP = 15  # WS2812 data pin
+# Row 1 (mode panel): off / auto / on
 PIN_BUTTON_OFF = 16
 PIN_BUTTON_AUTO = 17
 PIN_BUTTON_ON = 18
+# Row 2 (function/modifier panel): F1 / F2 / ALT
+PIN_BUTTON_F1 = 20
+PIN_BUTTON_F2 = 21
+PIN_BUTTON_ALT = 22
 
 # Game button mapping (default to existing physical buttons; tweak per pin once wired)
 PIN_BUTTON_R = PIN_BUTTON_OFF

@@ -277,13 +277,19 @@ class HallwayLedBar:
                 if self.game.is_active():
                     # In-game: physical buttons drive game inputs only.
                     if button_actions['abort_game']:
-                        print("Game aborted by button combo")
+                        print("Game aborted by ALT+F1")
                         self.game.stop()
                     else:
                         for c in button_actions.get('shoot_colors', ()):
                             self.game.shoot(c)
                         for m in button_actions.get('upgrade_mixes', ()):
                             self.game.upgrade_last_ball(m)
+                        delta = button_actions.get('level_delta', 0)
+                        if delta:
+                            new_level = max(1, self.game.level + delta)
+                            if self.game.shots_fired_this_game() == 0:
+                                print(f"Level adjust: {self.game.level} -> {new_level}")
+                                self.game.restart_at_level(new_level)
                 else:
                     # Check for AP mode trigger
                     if button_actions['ap_mode']:
@@ -292,9 +298,18 @@ class HallwayLedBar:
                         self._start_ap_mode()
                         continue
 
+                    # F1 starts a fresh game from the physical panel.
+                    if button_actions.get('start_game'):
+                        print("Starting game from F1")
+                        self.game.start(1)
+
                     # Handle mode changes from buttons
                     if button_actions['mode_change']:
-                        print(f"Mode changed to: {button_actions['mode_change']}")
+                        temp = button_actions.get('mode_temporary')
+                        if temp is None:
+                            print(f"Mode changed to: {button_actions['mode_change']}")
+                        else:
+                            print(f"Mode changed to: {button_actions['mode_change']} (temporary={temp})")
 
                 # Update status LED flash if active
                 self.led.update_status_led_flash()

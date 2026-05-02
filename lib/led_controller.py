@@ -37,6 +37,10 @@ class LEDController:
         self.status_led_last_flash = 0
         self.status_led_color = (0, 0, 0)
 
+        # Short status pulse (button feedback). Overrides flash for its duration.
+        self.status_pulse_until = 0  # ticks_ms; 0 = no pulse
+        self.status_pulse_color = (0, 0, 0)
+
     def hsv_to_rgb(self, h, s, v):
         """
         Convert HSV to RGB
@@ -271,15 +275,51 @@ class LEDController:
         self.status_led_flash_state = True
         self.status_led_last_flash = time.ticks_ms()
 
+    def pulse_status_led(self, color_rgb, duration_ms=30):
+        """
+        Brief status-LED blip used for button-press feedback. Overrides any
+        ongoing flash for the duration; the pre-existing status is restored
+        once the pulse expires (handled in update_status_led_flash).
+        """
+        if not self.enabled:
+            return
+        self.status_pulse_color = color_rgb
+        self.status_pulse_until = time.ticks_add(time.ticks_ms(), duration_ms)
+        self.strip[0] = color_rgb
+        self.strip.write()
+
     def update_status_led_flash(self):
         """
-        Update status LED flash state
-        Call this regularly in the main loop
+        Update status LED flash state.
+        Call this regularly in the main loop. If a short pulse is active,
+        hold the pulse color until it expires; then resume the normal
+        flash/idle behavior.
         """
-        if not self.enabled or not self.status_led_active:
+        if not self.enabled:
             return
 
         now = time.ticks_ms()
+
+        # Short pulse takes priority.
+        if self.status_pulse_until != 0:
+            if time.ticks_diff(now, self.status_pulse_until) >= 0:
+                # Pulse expired; restore prior state.
+                self.status_pulse_until = 0
+                if self.status_led_active:
+                    # Resume the flash visibly: re-show the configured color
+                    # and reset the half-period timer so it stays in sync.
+                    self.status_led_flash_state = True
+                    self.status_led_last_flash = now
+                    self.strip[0] = self.status_led_color
+                else:
+                    self.strip[0] = (0, 0, 0)
+                self.strip.write()
+            # While the pulse is held, do nothing else.
+            return
+
+        if not self.status_led_active:
+            return
+
         if time.ticks_diff(now, self.status_led_last_flash) >= 500:  # Flash every 500ms
             self.status_led_flash_state = not self.status_led_flash_state
             self.status_led_last_flash = now
