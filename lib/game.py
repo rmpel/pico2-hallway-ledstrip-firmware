@@ -24,9 +24,12 @@ BARRIER_FRACTION = 0.05    # position from home (fraction of playfield)
 BARRIER_BRIGHTNESS = 0.20   # white intensity 0..1
 
 # Enemy shield (far end — hit it with any ball to win the level).
-# Only renders when the snake's head has retreated past it (snake doesn't cover it).
-ENEMY_SHIELD_FRACTION = 0.7   # position from home (fraction of playfield)
-ENEMY_SHIELD_BRIGHTNESS = 0.30  # cyan intensity 0..1
+# Always rendered during play; "shootable" once the snake's head has reached
+# (or retreated past) the shield position.
+ENEMY_SHIELD_FRACTION = 0.7              # base position at level 1 (fraction of playfield)
+ENEMY_SHIELD_FRACTION_PER_LEVEL = 0.05   # shifted further toward the enemy each level
+ENEMY_SHIELD_FRACTION_MAX = 0.9          # cap so the shield never reaches the far end
+ENEMY_SHIELD_BRIGHTNESS = 0.30           # cyan intensity 0..1
 
 # Snake start length per level
 START_FRACTION = 0.50       # level-1 start length / playfield
@@ -160,6 +163,7 @@ class Game:
         self._pf_end = NUM_LEDS - 1 - END_SKIP_LEDS
         self._pf_len = max(0, self._pf_end - self._pf_start + 1)
         self._barrier_pf_idx = int(self._pf_len * BARRIER_FRACTION)
+        # Shield position depends on level; primed in _begin_game.
         self._enemy_shield_pf_idx = int(self._pf_len * ENEMY_SHIELD_FRACTION)
 
         # Snake state
@@ -216,10 +220,13 @@ class Game:
 
     def shoot(self, color):
         # Accepts any of the 6 colors (R/G/B primaries + Y/C/M mixes).
+        # Allowed during intro states too — there it's consumed as a
+        # "skip the flashes" signal in _drain_pending_inputs rather than
+        # firing a ball.
         if color not in _COLOR_MAP:
             return
         with self._lock:
-            if self.state != "playing":
+            if self.state not in ("playing", "intro_flash", "intro_highscore"):
                 return
             if len(self._pending_shots) >= PENDING_SHOTS_CAP:
                 return
@@ -308,6 +315,20 @@ class Game:
             # shots counter (which is already 0).
             self._begin_game(now, level_restart)
 
+        # If shots are pending while we're still in any intro state, treat the
+        # input as "start the game NOW" — skip remaining flashes/materialize,
+        # build the snake instantly, jump to playing, then fire the shots.
+        if shots and self.state in ("intro_flash", "intro_highscore", "intro_materialize"):
+            self._skip_intro_to_playing(now)
+
+        # If shots arrive during the flashing intro phases, treat the press as
+        # a "skip the flashes" signal — discard the shots and jump straight
+        # to materialize, as if both flash sequences and the highscore hold
+        # had completed naturally.
+        if shots and self.state in ("intro_flash", "intro_highscore"):
+            self._enter_intro_materialize(now)
+            shots = []  # consumed as skip-input, not as a fired shot
+
         if shots and self.state == "playing":
             for c in shots:
                 self._launch_ball(c, now)
@@ -320,8 +341,20 @@ class Game:
         self._pf_end = NUM_LEDS - 1 - END_SKIP_LEDS
         self._pf_len = max(0, self._pf_end - self._pf_start + 1)
         self._barrier_pf_idx = int(self._pf_len * BARRIER_FRACTION)
-        self._enemy_shield_pf_idx = int(self._pf_len * ENEMY_SHIELD_FRACTION)
+        self._recompute_shield_idx()
         self._enter_intro_flash(now)
+
+    def _recompute_shield_idx(self):
+        """Shield position scales with level: base + per-level shift, capped."""
+        frac = ENEMY_SHIELD_FRACTION + ENEMY_SHIELD_FRACTION_PER_LEVEL * (self.level - 1)
+        if frac > ENEMY_SHIELD_FRACTION_MAX:
+            frac = ENEMY_SHIELD_FRACTION_MAX
+        # Also clamp to a sensible max within the playfield (leave at least one
+        # LED past the shield so the snake-around-shield render has room).
+        idx = int(self._pf_len * frac)
+        if idx > self._pf_len - 2:
+            idx = self._pf_len - 2
+        self._enemy_shield_pf_idx = idx
 
     # ---------- Geometry helpers ----------
 
@@ -495,12 +528,14 @@ class Game:
         self._game_shots_fired += 1
 
     def _shield_exposed(self):
-        # Enemy shield is exposed (and shootable) when the snake doesn't cover it.
-        # Snake occupies [head_pf_idx, _pf_len-1]; shield is hidden iff head_pf_idx
-        # <= shield_idx. When snake is empty, treat shield as exposed.
+        # Enemy shield is shootable as soon as the snake's head has reached
+        # the shield position. Visually the snake-around-shield render shifts
+        # any ball at or past the shield by +1, so when head_pf_idx ==
+        # shield_idx the player sees the shield in front of the head — and
+        # expects to hit it. Snake empty → trivially exposed.
         if not self.snake_balls:
             return True
-        return self.head_pf_idx > self._enemy_shield_pf_idx
+        return self.head_pf_idx >= self._enemy_shield_pf_idx
 
     def _step_balls(self, now):
         if not self.balls:
@@ -563,6 +598,7 @@ class Game:
         # Phase 2: fade
         if time.ticks_diff(now, self._win_fade_start_ms) >= WIN_FADE_MS:
             self.level += 1
+            self._recompute_shield_idx()
             self._enter_intro_flash(now)
 
     def _advance_gameover_anim(self, now):

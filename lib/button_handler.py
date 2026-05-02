@@ -54,6 +54,12 @@ class ButtonHandler:
         # True if the current hold has actually triggered a hold-adjust at
         # least once — used to flip direction on release.
         self.did_hold_adjust = {n: False for n in _BTN_NAMES}
+        # When game-input mode flips while a button is still physically held,
+        # we mark it here so that the lingering press isn't reinterpreted as a
+        # fresh press in the new mode (otherwise releasing F1 right after an
+        # ALT+F1 abort would trigger start_game again, etc.). Cleared when the
+        # button is observed released.
+        self.ignore_until_release = {n: False for n in _BTN_NAMES}
 
         # Alternating adjustment direction (manual-mode hold semantics on row 1)
         self.brightness_increasing = True
@@ -135,9 +141,16 @@ class ButtonHandler:
 
     def set_game_input_mode(self, flag):
         """Toggle game input mode. Clears stale press state so a press that
-        spans the toggle doesn't bleed across modes."""
+        spans the toggle doesn't bleed across modes. Buttons that are still
+        physically held are marked to be ignored until they're released — so
+        e.g. an ALT+F1 abort doesn't immediately re-fire start_game when F1
+        is finally released."""
         self.game_input_mode = bool(flag)
         for n in _BTN_NAMES:
+            # If the button is still physically held, don't let it count as a
+            # fresh press in the new mode.
+            if self._is_pressed(self._btn_obj[n]):
+                self.ignore_until_release[n] = True
             self.button_held[n] = False
             self.hold_start_time[n] = 0
         self.all_buttons_pressed = False
@@ -185,6 +198,13 @@ class ButtonHandler:
         for btn_name in _BTN_NAMES:
             btn = self._btn_obj[btn_name]
             is_pressed = self._is_pressed(btn)
+
+            # If the button was held during a mode toggle, ignore it entirely
+            # until the user lifts it (then a fresh press is allowed).
+            if self.ignore_until_release[btn_name]:
+                if not is_pressed:
+                    self.ignore_until_release[btn_name] = False
+                continue
 
             if is_pressed:
                 if not self.button_held[btn_name]:

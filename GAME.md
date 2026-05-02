@@ -23,7 +23,7 @@ The LED strip is split into:
 Within the playfield:
 
 - **Home barrier** sits at `int(_pf_len * BARRIER_FRACTION)` (default 12.5% from home).
-- **Enemy shield** sits at `int(_pf_len * ENEMY_SHIELD_FRACTION)` (default 87.5% from home).
+- **Enemy shield** position is level-dependent: `int(_pf_len * effective_fraction)` where `effective_fraction = min(ENEMY_SHIELD_FRACTION_MAX, ENEMY_SHIELD_FRACTION + ENEMY_SHIELD_FRACTION_PER_LEVEL * (level - 1))`. The shield retreats further into the enemy base each level, capped so it never reaches the very last LED.
 
 The **head** of the snake is the home-side end of the snake (closest to the player — the engagement end). The **tail** is the far-side end, anchored at `pf_len - 1`. The snake renders in a contiguous block; new balls are appended at the tail and the whole block shifts toward the player on each grow tick.
 
@@ -80,9 +80,9 @@ At level **`BALL_BECOMES_HEAD_LEVEL`** (default 5) and above, firing a wrong-col
 ### Enemy shield
 
 - Cyan-amber crackle (random white/yellow energy at ~30% brightness).
-- Always visible during play.
-- **Shootable** only when the snake's head has retreated past it (tail-side of the shield is clear).
-- A ball reaching the exposed shield instantly wins the level.
+- Always visible during play. Position scales with level (see Geometry).
+- **Shootable** as soon as the snake's head reaches the shield position. (Visually, with the snake-around-shield render trick, the head appears displaced past the shield at that moment — so the shield is what the player sees in front, and shooting it wins.)
+- A ball reaching the exposed shield instantly wins the level. Shield-hit is checked before snake-hit, so the shield always wins ties when both could fire on the same step.
 
 ### Snake-around-shield rendering trick
 
@@ -178,7 +178,9 @@ All tunables live at the top of `lib/game.py`. Defaults shown.
 | `END_SKIP_LEDS`        | 1       | LEDs at far end excluded from playfield |
 | `BARRIER_FRACTION`     | 0.125   | Home barrier position (fraction of playfield from home) |
 | `BARRIER_BRIGHTNESS`   | 0.20    | Home barrier crackle intensity (0..1) |
-| `ENEMY_SHIELD_FRACTION` | 0.875  | Enemy shield position |
+| `ENEMY_SHIELD_FRACTION` | 0.7    | Enemy shield position at level 1 (fraction from home) |
+| `ENEMY_SHIELD_FRACTION_PER_LEVEL` | 0.05 | Shifted further from home each level |
+| `ENEMY_SHIELD_FRACTION_MAX` | 0.9   | Cap on shield position (must stay short of the last LED) |
 | `ENEMY_SHIELD_BRIGHTNESS` | 0.30 | Enemy shield crackle intensity (0..1) |
 
 ### Snake
