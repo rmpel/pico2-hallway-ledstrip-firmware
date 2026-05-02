@@ -315,12 +315,6 @@ class Game:
             # shots counter (which is already 0).
             self._begin_game(now, level_restart)
 
-        # If shots are pending while we're still in any intro state, treat the
-        # input as "start the game NOW" — skip remaining flashes/materialize,
-        # build the snake instantly, jump to playing, then fire the shots.
-        if shots and self.state in ("intro_flash", "intro_highscore", "intro_materialize"):
-            self._skip_intro_to_playing(now)
-
         # If shots arrive during the flashing intro phases, treat the press as
         # a "skip the flashes" signal — discard the shots and jump straight
         # to materialize, as if both flash sequences and the highscore hold
