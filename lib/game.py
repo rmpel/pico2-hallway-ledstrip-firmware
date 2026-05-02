@@ -20,12 +20,12 @@ HOME_SKIP_LEDS = 2          # LEDs at home end excluded from playfield
 END_SKIP_LEDS = 7           # LEDs at far end excluded from playfield
 
 # Barrier (white "shield" near home end — protects player; touch = game over)
-BARRIER_FRACTION = 0.125    # position from home (fraction of playfield)
+BARRIER_FRACTION = 0.05    # position from home (fraction of playfield)
 BARRIER_BRIGHTNESS = 0.20   # white intensity 0..1
 
 # Enemy shield (far end — hit it with any ball to win the level).
 # Only renders when the snake's head has retreated past it (snake doesn't cover it).
-ENEMY_SHIELD_FRACTION = 0.875   # position from home (fraction of playfield)
+ENEMY_SHIELD_FRACTION = 0.7   # position from home (fraction of playfield)
 ENEMY_SHIELD_BRIGHTNESS = 0.30  # cyan intensity 0..1
 
 # Snake start length per level
@@ -34,8 +34,8 @@ GROW_PER_LEVEL = 2          # extra LEDs per level
 MAX_FRACTION = 0.75         # cap on snake start length
 
 # Snake advance rate
-GROW_TICK_MS = 1500          # at level 1
-GROW_SPEEDUP_MS = 75         # shaved per additional level
+GROW_TICK_MS = 3000          # at level 1
+GROW_SPEEDUP_MS = 100         # shaved per additional level
 GROW_TICK_MIN_MS = 300       # floor
 
 # Ball travel
