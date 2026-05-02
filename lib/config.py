@@ -11,6 +11,11 @@ PIN_BUTTON_OFF = 16
 PIN_BUTTON_AUTO = 17
 PIN_BUTTON_ON = 18
 
+# Game button mapping (default to existing physical buttons; tweak per pin once wired)
+PIN_BUTTON_R = PIN_BUTTON_OFF
+PIN_BUTTON_G = PIN_BUTTON_AUTO
+PIN_BUTTON_B = PIN_BUTTON_ON
+
 # LED strip configuration
 NUM_LEDS = 76  # 2 meters at 30 LEDs/meter
 LED_START_OFFSET = 1  # Skip first N LEDs (LED 0 is status LED)
@@ -20,6 +25,7 @@ LED_BRIGHTNESS_MAX = 255
 BUTTON_DEBOUNCE_MS = 50
 BUTTON_HOLD_MS = 1000  # How long to hold for continuous adjust
 BUTTON_COMBO_MS = 10000  # All 3 buttons for AP mode (10 seconds)
+BUTTON_MIX_WINDOW_MS = 80  # Two primaries within this window = fire mix upgrade (game mode)
 
 # Manual adjustment speeds (per 100ms while holding button)
 BRIGHTNESS_STEP = 2  # 0-100 scale

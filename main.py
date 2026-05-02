@@ -16,6 +16,7 @@ from lib.sun_times import SunTimes
 from lib.web_server import WebServer
 from lib.ntp_sync import NTPSync
 from lib.tz_offset import TzOffset
+from lib.game import Game
 
 
 class HallwayLedBar:
@@ -34,7 +35,9 @@ class HallwayLedBar:
         self.ntp = NTPSync(self.storage)
         self.tz_offset = TzOffset(self.storage)
         self.buttons = ButtonHandler(self.storage, self.led)
-        self.web_server = WebServer(self.storage, self.wifi, self.scheduler, self.sun_times, self.ntp, self.tz_offset)
+        self.game = Game(self.led, self.storage)
+        self.game.on_active_change = lambda active: self.buttons.set_game_input_mode(active)
+        self.web_server = WebServer(self.storage, self.wifi, self.scheduler, self.sun_times, self.ntp, self.tz_offset, self.game)
 
         # State
         self.last_transition_update = 0
@@ -138,6 +141,11 @@ class HallwayLedBar:
     def _update_mode(self):
         """Update LED state based on current mode"""
         if self.web_server and getattr(self.web_server, "preview_active", False):
+            return
+        # Pump the game every cycle. When inactive it just drains pending inputs
+        # so a queued start request transitions state in the same loop iteration.
+        self.game.tick()
+        if self.game.is_active():
             return
         mode = self.storage.get_mode()
 
@@ -266,16 +274,27 @@ class HallwayLedBar:
                 # Handle button inputs
                 button_actions = self.buttons.update()
 
-                # Check for AP mode trigger
-                if button_actions['ap_mode']:
-                    print("AP mode triggered by button combo")
-                    self.web_server.stop()
-                    self._start_ap_mode()
-                    continue
+                if self.game.is_active():
+                    # In-game: physical buttons drive game inputs only.
+                    if button_actions['abort_game']:
+                        print("Game aborted by button combo")
+                        self.game.stop()
+                    else:
+                        for c in button_actions.get('shoot_colors', ()):
+                            self.game.shoot(c)
+                        for m in button_actions.get('upgrade_mixes', ()):
+                            self.game.upgrade_last_ball(m)
+                else:
+                    # Check for AP mode trigger
+                    if button_actions['ap_mode']:
+                        print("AP mode triggered by button combo")
+                        self.web_server.stop()
+                        self._start_ap_mode()
+                        continue
 
-                # Handle mode changes from buttons
-                if button_actions['mode_change']:
-                    print(f"Mode changed to: {button_actions['mode_change']}")
+                    # Handle mode changes from buttons
+                    if button_actions['mode_change']:
+                        print(f"Mode changed to: {button_actions['mode_change']}")
 
                 # Update status LED flash if active
                 self.led.update_status_led_flash()

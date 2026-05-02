@@ -6,13 +6,24 @@ from config import (
     PIN_BUTTON_OFF,
     PIN_BUTTON_AUTO,
     PIN_BUTTON_ON,
+    PIN_BUTTON_R,
+    PIN_BUTTON_G,
+    PIN_BUTTON_B,
     BUTTON_DEBOUNCE_MS,
     BUTTON_HOLD_MS,
     BUTTON_COMBO_MS,
+    BUTTON_MIX_WINDOW_MS,
     BRIGHTNESS_STEP,
     HUE_STEP,
     SATURATION_STEP
 )
+
+
+_MIX_OF = {
+    ("R", "G"): "Y", ("G", "R"): "Y",
+    ("G", "B"): "C", ("B", "G"): "C",
+    ("R", "B"): "M", ("B", "R"): "M",
+}
 
 
 class ButtonHandler:
@@ -43,6 +54,26 @@ class ButtonHandler:
         # Adjustment timing
         self.last_adjust_time = 0
         self.adjust_interval_ms = 100  # Adjust every 100ms while holding
+
+        # Game-mode input: while True, short presses fire game balls instead
+        # of changing mode, and the all-3 combo aborts the game instead of
+        # entering AP mode.
+        self.game_input_mode = False
+
+        # Per-button-name -> game shoot color, resolved from pin numbers so the
+        # user can re-map pins without changing this mapping.
+        self._game_color_by_btn = {}
+        for btn_name, pin in (("off", PIN_BUTTON_OFF), ("auto", PIN_BUTTON_AUTO), ("on", PIN_BUTTON_ON)):
+            if pin == PIN_BUTTON_R:
+                self._game_color_by_btn[btn_name] = "R"
+            elif pin == PIN_BUTTON_G:
+                self._game_color_by_btn[btn_name] = "G"
+            elif pin == PIN_BUTTON_B:
+                self._game_color_by_btn[btn_name] = "B"
+
+        # Per-game-color last-press timestamp (for mix-window detection).
+        # 0 = not currently held.
+        self._game_last_press = {"R": 0, "G": 0, "B": 0}
 
     def _is_pressed(self, button):
         """Check if button is pressed (active low with pull-up)"""
@@ -75,17 +106,43 @@ class ButtonHandler:
 
         return False
 
+    def set_game_input_mode(self, flag):
+        """Toggle game input mode. Clears stale press state so a press that
+        spans the toggle doesn't bleed across modes."""
+        self.game_input_mode = bool(flag)
+        for btn_name in ("off", "auto", "on"):
+            self.button_held[btn_name] = False
+            self.hold_start_time[btn_name] = 0
+        self.all_buttons_pressed = False
+        self.combo_start_time = 0
+        self._game_last_press["R"] = 0
+        self._game_last_press["G"] = 0
+        self._game_last_press["B"] = 0
+
     def update(self):
         """
-        Update button states and handle button logic
-        Call this regularly in the main loop
-        Returns: dict with actions: {'mode_change': str, 'ap_mode': bool}
+        Update button states and handle button logic.
+        Returns dict with actions:
+          {'mode_change': str|None, 'ap_mode': bool, 'abort_game': bool,
+           'shoot_colors': list[str],     # one or more of 'R'/'G'/'B'
+           'upgrade_mixes': list[str]}    # one or more of 'Y'/'C'/'M'
+        In non-game mode, shoot_colors / upgrade_mixes are always empty.
+        In game mode, mode_change is always None.
         """
-        actions = {'mode_change': None, 'ap_mode': False}
+        actions = {
+            'mode_change': None,
+            'ap_mode': False,
+            'abort_game': False,
+            'shoot_colors': [],
+            'upgrade_mixes': [],
+        }
 
-        # Check for AP mode combo first (takes priority)
+        # All-3 combo: AP mode normally, abort during game.
         if self.check_ap_mode_combo():
-            actions['ap_mode'] = True
+            if self.game_input_mode:
+                actions['abort_game'] = True
+            else:
+                actions['ap_mode'] = True
             return actions
 
         now = time.ticks_ms()
@@ -96,34 +153,57 @@ class ButtonHandler:
             is_pressed = self._is_pressed(btn)
 
             if is_pressed:
-                # Button is currently pressed
                 if not self.button_held[btn_name]:
-                    # New button press - check debounce
+                    # Rising edge — debounce gate.
                     if time.ticks_diff(now, self.last_press_time[btn_name]) > BUTTON_DEBOUNCE_MS:
-                        # Valid new press
                         self.button_held[btn_name] = True
                         self.hold_start_time[btn_name] = now
                         self.last_press_time[btn_name] = now
+
+                        if self.game_input_mode:
+                            color = self._game_color_by_btn.get(btn_name)
+                            if color is not None:
+                                actions['shoot_colors'].append(color)
+                                # Mix window check: if another primary was
+                                # pressed within BUTTON_MIX_WINDOW_MS, queue
+                                # the mix-upgrade for the most recently
+                                # launched ball.
+                                for other, other_ts in self._game_last_press.items():
+                                    if other == color or other_ts == 0:
+                                        continue
+                                    if time.ticks_diff(now, other_ts) <= BUTTON_MIX_WINDOW_MS:
+                                        mix = _MIX_OF.get((color, other))
+                                        if mix:
+                                            actions['upgrade_mixes'].append(mix)
+                                        break
+                                self._game_last_press[color] = now
                 else:
-                    # Button being held - check if hold duration reached
                     hold_duration = time.ticks_diff(now, self.hold_start_time[btn_name])
 
-                    if hold_duration >= BUTTON_HOLD_MS and current_mode == "on":
-                        # Handle hold actions (only in manual "on" mode)
+                    # Holds (brightness/hue/saturation) only when not in game input mode
+                    if (not self.game_input_mode
+                            and hold_duration >= BUTTON_HOLD_MS
+                            and current_mode == "on"):
                         if time.ticks_diff(now, self.last_adjust_time) >= self.adjust_interval_ms:
                             self._handle_hold_adjust(btn_name)
                             self.last_adjust_time = now
             else:
-                # Button released
                 if self.button_held[btn_name]:
-                    # Was pressed, now released
                     hold_duration = time.ticks_diff(now, self.hold_start_time[btn_name])
 
-                    if hold_duration < BUTTON_HOLD_MS:
-                        # Short press - mode change
+                    # Non-game mode keeps the original release-emit semantics for
+                    # mode-change short presses. Game mode already fired on the
+                    # press edge above, so release just clears state.
+                    if (not self.game_input_mode) and hold_duration < BUTTON_HOLD_MS:
                         actions['mode_change'] = self._handle_short_press(btn_name)
 
                     self.button_held[btn_name] = False
+
+                    # Clear game last-press timestamp on release.
+                    if self.game_input_mode:
+                        color = self._game_color_by_btn.get(btn_name)
+                        if color is not None:
+                            self._game_last_press[color] = 0
 
         return actions
 

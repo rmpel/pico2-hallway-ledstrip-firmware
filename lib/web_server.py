@@ -158,7 +158,7 @@ def _sha256_of_file(path):
 
 
 class WebServer:
-    def __init__(self, storage, wifi_manager, scheduler, sun_times, ntp_sync=None, tz_offset=None):
+    def __init__(self, storage, wifi_manager, scheduler, sun_times, ntp_sync=None, tz_offset=None, game=None):
         """Initialize web server"""
         self.storage = storage
         self.wifi = wifi_manager
@@ -166,6 +166,7 @@ class WebServer:
         self.sun_times = sun_times
         self.ntp = ntp_sync
         self.tz_offset = tz_offset
+        self.game = game
         self.socket = None
         self.preview_active = False
 
@@ -232,11 +233,31 @@ class WebServer:
         self._send_response(client, status, "application/json", json.dumps(obj))
 
     def _send_static(self, client, path, content_type):
-        body = self._read_file_bytes(path)
-        if body is None:
+        # Stream the file directly: avoids allocating the whole body in RAM,
+        # and uses chunked sendall so a partial write can't desync from the
+        # advertised Content-Length (was causing ERR_CONTENT_LENGTH_MISMATCH
+        # for larger files like script.js on memory-constrained devices).
+        size = _file_size(path)
+        if size < 0:
             self._send_response(client, "404 Not Found", "text/plain", "File not found")
-        else:
-            self._send_response(client, "200 OK", content_type, body)
+            return
+        try:
+            header = (
+                "HTTP/1.1 200 OK\r\n"
+                f"Content-Type: {content_type}; charset=utf-8\r\n"
+                f"Content-Length: {size}\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+            )
+            client.sendall(header.encode("utf-8"))
+            with open(path, "rb") as f:
+                while True:
+                    chunk = f.read(1024)
+                    if not chunk:
+                        break
+                    client.sendall(chunk)
+        except Exception as e:
+            print(f"static send failed for {path}: {e}")
 
     def _handle_api_status(self, client):
         """Handle /api/status request"""
@@ -427,6 +448,61 @@ class WebServer:
         """POST /api/preview/stop - resume normal mode-driven LED updates."""
         self.preview_active = False
         self._send_json(client, "200 OK", {"success": True})
+
+    def _handle_api_game_start(self, client, request_body):
+        if self.game is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        level = 1
+        if request_body:
+            try:
+                data = json.loads(request_body)
+                if isinstance(data, dict) and "level" in data:
+                    level = int(data.get("level") or 1)
+            except (ValueError, TypeError):
+                level = 1
+        self.game.start(level)
+        self._send_json(client, "200 OK", {"success": True, "level": level})
+
+    def _handle_api_game_stop(self, client):
+        if self.game is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        self.game.stop()
+        self._send_json(client, "200 OK", {"success": True})
+
+    def _handle_api_game_shoot(self, client, request_body):
+        if self.game is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        try:
+            data = json.loads(request_body)
+            color = data.get("color")
+            if color not in ("R", "G", "B"):
+                self._send_json(client, "400 Bad Request", {"success": False, "error": "invalid color"})
+                return
+            self.game.shoot(color)
+            self._send_json(client, "200 OK", {"success": True})
+        except Exception as e:
+            self._send_json(client, "400 Bad Request", {"success": False, "error": str(e)})
+
+    def _handle_api_game_upgrade(self, client, request_body):
+        """POST /api/game/upgrade {"mix": "Y"|"C"|"M"} — promote the most
+        recently launched in-flight ball to the mix color (only if its current
+        color is one of the mix's two primaries; never downgrades)."""
+        if self.game is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        try:
+            data = json.loads(request_body)
+            mix = data.get("mix")
+            if mix not in ("Y", "C", "M"):
+                self._send_json(client, "400 Bad Request", {"success": False, "error": "invalid mix"})
+                return
+            self.game.upgrade_last_ball(mix)
+            self._send_json(client, "200 OK", {"success": True})
+        except Exception as e:
+            self._send_json(client, "400 Bad Request", {"success": False, "error": str(e)})
 
     def _handle_upload(self, client, query, total_body_len, leftover):
         """Stream body to /staging/<path>, hash it, validate, atomically rename."""
@@ -739,6 +815,24 @@ class WebServer:
 
             elif path == '/api/preview/stop' and method == 'POST':
                 self._handle_api_preview_stop(client)
+
+            elif path == '/game' or path == '/game.html':
+                self._send_static(client, '/web/game.html', "text/html")
+
+            elif path == '/game.js':
+                self._send_static(client, '/web/game.js', "application/javascript")
+
+            elif path == '/api/game/start' and method == 'POST':
+                self._handle_api_game_start(client, body)
+
+            elif path == '/api/game/stop' and method == 'POST':
+                self._handle_api_game_stop(client)
+
+            elif path == '/api/game/shoot' and method == 'POST':
+                self._handle_api_game_shoot(client, body)
+
+            elif path == '/api/game/upgrade' and method == 'POST':
+                self._handle_api_game_upgrade(client, body)
 
             elif path == '/api/files/list' and method == 'GET':
                 self._handle_files_list(client)
