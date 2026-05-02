@@ -86,14 +86,6 @@ _COLOR_MAP = {
     "C": COLOR_C, "Y": COLOR_Y, "M": COLOR_M,
 }
 _COLORS = ("R", "G", "B")
-_MIX_COLORS = ("C", "Y", "M")
-# A mix can only upgrade a ball whose current color is one of its two primaries.
-# Mix never downgrades back to a primary or to a different mix.
-_MIX_PRIMARIES = {
-    "Y": ("R", "G"),
-    "C": ("G", "B"),
-    "M": ("R", "B"),
-}
 
 # Snake palette per level: cyan unlocks at level 3, yellow at 4, magenta at 5+.
 def _palette_for_level(level):
@@ -144,7 +136,6 @@ class Game:
         # Cross-thread coordination
         self._lock = _thread.allocate_lock()
         self._pending_shots = []
-        self._pending_upgrades = []   # list of mix-color requests ("Y"/"C"/"M")
         self._pending_start = False
         self._pending_start_level = 1
         self._pending_stop = False
@@ -224,7 +215,8 @@ class Game:
             self._pending_stop = True
 
     def shoot(self, color):
-        if color not in _COLORS:
+        # Accepts any of the 6 colors (R/G/B primaries + Y/C/M mixes).
+        if color not in _COLOR_MAP:
             return
         with self._lock:
             if self.state != "playing":
@@ -234,17 +226,9 @@ class Game:
             self._pending_shots.append(color)
 
     def upgrade_last_ball(self, mix_color):
-        """Request the most recently launched in-flight ball be promoted to a
-        mix color (Y/C/M). Honored only if the current ball color is one of
-        the mix's two primaries. Never downgrades."""
-        if mix_color not in _MIX_PRIMARIES:
-            return
-        with self._lock:
-            if self.state != "playing":
-                return
-            if len(self._pending_upgrades) >= PENDING_SHOTS_CAP:
-                return
-            self._pending_upgrades.append(mix_color)
+        """Legacy API kept for backward compatibility. Now equivalent to
+        shoot(mix_color) — the upgrade dance is gone (direct mix buttons)."""
+        self.shoot(mix_color)
 
     def shots_fired_this_game(self):
         """Number of balls launched since this game started. Used to lock
@@ -303,13 +287,11 @@ class Game:
             do_stop = self._pending_stop
             start_level = self._pending_start_level
             shots = self._pending_shots
-            upgrades = self._pending_upgrades
             level_restart = self._pending_level_restart
             self._pending_start = False
             self._pending_start_level = 1
             self._pending_stop = False
             self._pending_shots = []
-            self._pending_upgrades = []
             self._pending_level_restart = None
 
         if do_stop:
@@ -329,42 +311,6 @@ class Game:
         if shots and self.state == "playing":
             for c in shots:
                 self._launch_ball(c, now)
-
-        if upgrades and self.state == "playing":
-            for mix in upgrades:
-                self._apply_upgrade(mix)
-
-    def _apply_upgrade(self, mix_color):
-        # Two-step "merge" to the mix:
-        #   1. Find the most recently launched in-flight ball whose color is
-        #      one of the mix's primaries, and upgrade it to mix_color.
-        #   2. Find an earlier ball of the OTHER primary and remove it (since
-        #      the player meant to fire one mix, not two primaries).
-        # Never downgrades; already-mixed or unrelated balls are left alone.
-        primaries = _MIX_PRIMARIES.get(mix_color)
-        if not primaries:
-            return
-        upgrade_idx = -1
-        upgraded_was = None
-        # Walk backwards: most-recent launch is at the end of self.balls.
-        for i in range(len(self.balls) - 1, -1, -1):
-            if self.balls[i]["color"] in primaries:
-                upgrade_idx = i
-                upgraded_was = self.balls[i]["color"]
-                self.balls[i]["color"] = mix_color
-                break
-        if upgrade_idx < 0:
-            return
-        # Remove a partner: the OTHER primary of the mix, found among balls
-        # other than the one we just upgraded. Prefer the most-recent partner
-        # (closest in time to the upgraded ball).
-        partner = primaries[1] if upgraded_was == primaries[0] else primaries[0]
-        for j in range(len(self.balls) - 1, -1, -1):
-            if j == upgrade_idx:
-                continue
-            if self.balls[j]["color"] == partner:
-                del self.balls[j]
-                return
 
     def _begin_game(self, now, level=1):
         self.level = max(1, int(level))
@@ -506,7 +452,13 @@ class Game:
             self._enter_playing(now)
             return
         if time.ticks_diff(now, self._intro_mat_next_ms) >= 0:
-            self.snake_balls.insert(0, random.choice(_palette_for_level(self.level)))
+            # The very last ball materialized is inserted at index 0 — that
+            # becomes the snake's head when play starts. Force that ball to
+            # always be a primary (R/G/B) so the player can match it from
+            # the first moment, regardless of level palette.
+            is_last = (self._intro_mat_built == self._intro_target_len - 1)
+            palette = _COLORS if is_last else _palette_for_level(self.level)
+            self.snake_balls.insert(0, random.choice(palette))
             self._intro_mat_built += 1
             self._intro_mat_next_ms = time.ticks_add(now, INTRO_MATERIALIZE_MS)
 

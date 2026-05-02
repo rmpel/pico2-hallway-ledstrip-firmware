@@ -280,16 +280,16 @@ class HallwayLedBar:
                         print("Game aborted by ALT+F1")
                         self.game.stop()
                     else:
-                        for c in button_actions.get('shoot_colors', ()):
-                            self.game.shoot(c)
-                        for m in button_actions.get('upgrade_mixes', ()):
-                            self.game.upgrade_last_ball(m)
                         delta = button_actions.get('level_delta', 0)
-                        if delta:
+                        # Pre-shot: F1/F2 mean "level adjust", and the
+                        # press-edge color shot is suppressed.
+                        if delta and self.game.shots_fired_this_game() == 0:
                             new_level = max(1, self.game.level + delta)
-                            if self.game.shots_fired_this_game() == 0:
-                                print(f"Level adjust: {self.game.level} -> {new_level}")
-                                self.game.restart_at_level(new_level)
+                            print(f"Level adjust: {self.game.level} -> {new_level}")
+                            self.game.restart_at_level(new_level)
+                        else:
+                            for c in button_actions.get('shoot_colors', ()):
+                                self.game.shoot(c)
                 else:
                     # Check for AP mode trigger
                     if button_actions['ap_mode']:

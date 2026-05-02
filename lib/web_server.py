@@ -472,13 +472,14 @@ class WebServer:
         self._send_json(client, "200 OK", {"success": True})
 
     def _handle_api_game_shoot(self, client, request_body):
+        """POST /api/game/shoot {"color": "R"|"G"|"B"|"Y"|"C"|"M"}"""
         if self.game is None:
             self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
             return
         try:
             data = json.loads(request_body)
             color = data.get("color")
-            if color not in ("R", "G", "B"):
+            if color not in ("R", "G", "B", "Y", "C", "M"):
                 self._send_json(client, "400 Bad Request", {"success": False, "error": "invalid color"})
                 return
             self.game.shoot(color)
@@ -487,9 +488,8 @@ class WebServer:
             self._send_json(client, "400 Bad Request", {"success": False, "error": str(e)})
 
     def _handle_api_game_upgrade(self, client, request_body):
-        """POST /api/game/upgrade {"mix": "Y"|"C"|"M"} — promote the most
-        recently launched in-flight ball to the mix color (only if its current
-        color is one of the mix's two primaries; never downgrades)."""
+        """Legacy endpoint kept for backward compatibility with older clients.
+        Now equivalent to /api/game/shoot with the mix color."""
         if self.game is None:
             self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
             return
@@ -499,7 +499,7 @@ class WebServer:
             if mix not in ("Y", "C", "M"):
                 self._send_json(client, "400 Bad Request", {"success": False, "error": "invalid mix"})
                 return
-            self.game.upgrade_last_ball(mix)
+            self.game.shoot(mix)
             self._send_json(client, "200 OK", {"success": True})
         except Exception as e:
             self._send_json(client, "400 Bad Request", {"success": False, "error": str(e)})

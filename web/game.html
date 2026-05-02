@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HallwayLedBar — Game</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .shoot-btn { font-size: 1.6em; padding: 28px 0; min-height: 80px; touch-action: manipulation; user-select: none; }
+    </style>
     <script src="game.js" defer></script>
 </head>
 <body>
@@ -12,20 +15,14 @@
         <h1>Color Match</h1>
 
         <div class="card">
-            <p style="text-align:center; margin-top:0;">Tap a color to shoot. Keys: <strong>A</strong>=R, <strong>S</strong>=G, <strong>D</strong>=B.</p>
-            <div class="button-group" style="display:flex; gap:6px; flex-wrap:wrap; align-items:stretch;">
-                <button id="btnR" class="btn" style="flex:2; min-width:80px; background:#e33; color:#fff; font-size:1.4em; padding:20px;">R</button>
-                <div class="mix-hint" style="flex:1; min-width:50px; background:#cc3; color:#222; font-size:0.9em; padding:20px 6px; border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:center; user-select:none; pointer-events:none; opacity:0.7;">
-                    <strong style="font-size:1.2em;">Y</strong><span>Q</span>
-                </div>
-                <button id="btnG" class="btn" style="flex:2; min-width:80px; background:#2c2; color:#fff; font-size:1.4em; padding:20px;">G</button>
-                <div class="mix-hint" style="flex:1; min-width:50px; background:#3cc; color:#222; font-size:0.9em; padding:20px 6px; border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:center; user-select:none; pointer-events:none; opacity:0.7;">
-                    <strong style="font-size:1.2em;">C</strong><span>W</span>
-                </div>
-                <button id="btnB" class="btn" style="flex:2; min-width:80px; background:#36f; color:#fff; font-size:1.4em; padding:20px;">B</button>
-                <div class="mix-hint" style="flex:1; min-width:50px; background:#c3c; color:#fff; font-size:0.9em; padding:20px 6px; border-radius:6px; display:flex; flex-direction:column; align-items:center; justify-content:center; user-select:none; pointer-events:none; opacity:0.7;">
-                    <strong style="font-size:1.2em;">M</strong><span>E</span>
-                </div>
+            <p style="text-align:center; margin-top:0;">Tap a color to shoot. Keys: <strong>A</strong>=R, <strong>S</strong>=G, <strong>D</strong>=B, <strong>Q</strong>=Y, <strong>W</strong>=C, <strong>E</strong>=M.</p>
+            <div class="button-group" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
+                <button id="btnR" class="btn shoot-btn" data-color="R" style="background:#e33; color:#fff;">R</button>
+                <button id="btnG" class="btn shoot-btn" data-color="G" style="background:#2c2; color:#fff;">G</button>
+                <button id="btnB" class="btn shoot-btn" data-color="B" style="background:#36f; color:#fff;">B</button>
+                <button id="btnY" class="btn shoot-btn" data-color="Y" style="background:#cc3; color:#222;">Y</button>
+                <button id="btnC" class="btn shoot-btn" data-color="C" style="background:#3cc; color:#222;">C</button>
+                <button id="btnM" class="btn shoot-btn" data-color="M" style="background:#c3c; color:#fff;">M</button>
             </div>
         </div>
 

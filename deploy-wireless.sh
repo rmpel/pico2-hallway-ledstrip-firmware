@@ -9,14 +9,18 @@
 set -e
 
 REBOOT=0
-HOST=""
+CHANGED_ONLY=0
+HOST="${PICO_HOST:-hallway.local}"
+
 for arg in "$@"; do
     case "$arg" in
+        --changed) CHANGED_ONLY=1 ;;
         --reboot) REBOOT=1 ;;
         -h|--help)
-            echo "Usage: $0 <host> [--reboot]"
+            echo "Usage: $0 <host> [--reboot] [--changed]"
             echo "  host:     IP address or hostname of the Pico W (e.g. hallway.local)"
             echo "  --reboot: reboot the device after upload (needed when Python files change)"
+            echo "  --changed: transfer all files Git says are changed"
             exit 0 ;;
         -*)
             echo "Unknown option: $arg" >&2
@@ -29,9 +33,7 @@ for arg in "$@"; do
 done
 
 if [ -z "$HOST" ]; then
-    echo "Usage: $0 <host> [--reboot]"
-    echo "  host:     IP address or hostname of the Pico W (e.g. hallway.local)"
-    echo "  --reboot: reboot the device after upload (needed when Python files change)"
+    "$0" -h
     exit 1
 fi
 
@@ -70,24 +72,48 @@ push() {
 
 cd "$SCRIPT_DIR"
 
-echo "📦 Copying library files..."
-for file in lib/*.py; do
-    if [ -f "$file" ]; then
-        push "$file" "$file"
-    fi
-done
+if [ "$CHANGED_ONLY" -eq 1 ]; then
 
-echo "🌐 Copying web files..."
-for file in web/*; do
-    if [ -f "$file" ]; then
-        push "$file" "$file"
-    fi
-done
+    # Create an empty array
+    changed_files=()
 
-echo "📄 Copying main.py..."
-push main.py main.py
+    # Use 'while read' to populate the array
+    # -r: prevents backslashes from being interpreted
+    while IFS= read -r line; do
+        changed_files+=("$line")
+    done < <(git diff --name-only --diff-filter=d)
 
-echo ""
+    # 2. Run function for each file
+    echo "📦 Copying changed files (according to git)..."
+    for file in "${changed_files[@]}"; do
+        if [ -f "$file" ]; then
+            push "$file" "$file"
+        fi
+    done
+
+else
+
+    echo "📦 Copying library files..."
+    for file in lib/*.py; do
+        if [ -f "$file" ]; then
+            push "$file" "$file"
+        fi
+    done
+
+    echo "🌐 Copying web files..."
+    for file in web/*; do
+        if [ -f "$file" ]; then
+            push "$file" "$file"
+        fi
+    done
+
+    echo "📄 Copying main.py..."
+    push main.py main.py
+
+    echo ""
+
+fi
+
 if [ "$REBOOT" -eq 1 ]; then
     echo "♻️  Rebooting device..."
     curl -sS -X POST "http://${HOST}/api/reboot" >/dev/null || true

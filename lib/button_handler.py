@@ -15,18 +15,11 @@ from config import (
     BUTTON_DEBOUNCE_MS,
     BUTTON_HOLD_MS,
     BUTTON_COMBO_MS,
-    BUTTON_MIX_WINDOW_MS,
     BRIGHTNESS_STEP,
     HUE_STEP,
     SATURATION_STEP
 )
 
-
-_MIX_OF = {
-    ("R", "G"): "Y", ("G", "R"): "Y",
-    ("G", "B"): "C", ("B", "G"): "C",
-    ("R", "B"): "M", ("B", "R"): "M",
-}
 
 # All physical buttons we track. Order is the iteration order in update().
 _BTN_NAMES = ("off", "auto", "on", "f1", "f2", "alt")
@@ -90,10 +83,6 @@ class ButtonHandler:
             elif pin == PIN_BUTTON_B:
                 self._game_color_by_btn[btn_name] = "B"
 
-        # Per-game-color last-press timestamp (for mix-window detection).
-        # 0 = not currently held.
-        self._game_last_press = {"R": 0, "G": 0, "B": 0}
-
         # Last logged button-state snapshot (raw pin reads). Used to print a
         # status line only when something changes.
         self._last_state_print = None
@@ -153,23 +142,22 @@ class ButtonHandler:
             self.hold_start_time[n] = 0
         self.all_buttons_pressed = False
         self.combo_start_time = 0
-        self._game_last_press["R"] = 0
-        self._game_last_press["G"] = 0
-        self._game_last_press["B"] = 0
 
     def update(self):
         """
         Update button states and dispatch button logic.
         Returns dict with actions (always all keys present):
-          mode_change:    'off'|'on'|'auto'|None  (legacy log/handle hint)
-          mode_temporary: bool|None               (only meaningful for off/on)
-          ap_mode:        bool                    (3-combo, non-game only)
-          abort_game:     bool                    (ALT+F1, game only)
-          start_game:     bool                    (F1, non-game only)
-          level_delta:    int                     (F1=+1 / F2=-1, game only,
-                                                   honored only if no shots fired)
-          shoot_colors:   list[str]               (R/G/B, game only)
-          upgrade_mixes:  list[str]               (Y/C/M, game only)
+          mode_change:    'off'|'on'|'auto'|'rainbow'|None
+          mode_temporary: bool|None
+          ap_mode:        bool                  (3-combo, non-game only)
+          abort_game:     bool                  (ALT+F1, game only)
+          start_game:     bool                  (F1, non-game only)
+          level_delta:    int                   (F1=+1 / F2=-1, game only;
+                                                 main applies only when no
+                                                 shots fired this game and
+                                                 suppresses the side-effect
+                                                 shot in that case)
+          shoot_colors:   list[str]             (R/G/B/Y/C/M, game only)
         """
         actions = {
             'mode_change': None,
@@ -179,7 +167,6 @@ class ButtonHandler:
             'start_game': False,
             'level_delta': 0,
             'shoot_colors': [],
-            'upgrade_mixes': [],
         }
 
         # Console diagnostic: print held-button snapshot when it changes.
@@ -213,8 +200,8 @@ class ButtonHandler:
                         # Visual feedback: brief blip on the status LED so the
                         # user can confirm the button registered.
                         self.led.pulse_status_led((40, 40, 80), 30)
-                        # Game-mode: row-1 buttons fire on press edge.
-                        if self.game_input_mode and btn_name in ("off", "auto", "on"):
+                        # Game-mode: every button fires its color on press edge.
+                        if self.game_input_mode:
                             self._on_game_press_edge(btn_name, now, actions)
                 else:
                     hold_duration = time.ticks_diff(now, self.hold_start_time[btn_name])
@@ -245,37 +232,44 @@ class ButtonHandler:
                     self.button_held[btn_name] = False
                     self.did_hold_adjust[btn_name] = False
 
-                    # Clear game last-press timestamp on row-1 release (game mode).
-                    if self.game_input_mode and btn_name in ("off", "auto", "on"):
-                        color = self._game_color_by_btn.get(btn_name)
-                        if color is not None:
-                            self._game_last_press[color] = 0
-
         return actions
 
-    # ---- Game-mode press-edge handler for row-1 (R/G/B) ----
+    # ---- Game-mode press-edge handler (all 6 buttons fire a color) ----
 
     def _on_game_press_edge(self, btn_name, now, actions):
-        color = self._game_color_by_btn.get(btn_name)
+        # Row 1: configurable R/G/B mapping (PIN_BUTTON_R/G/B aliases).
+        # Row 2: F1=Y, F2=C, ALT=M.
+        if btn_name in ("off", "auto", "on"):
+            color = self._game_color_by_btn.get(btn_name)
+        elif btn_name == "f1":
+            color = "Y"
+        elif btn_name == "f2":
+            color = "C"
+        elif btn_name == "alt":
+            color = "M"
+        else:
+            color = None
         if color is None:
             return
         actions['shoot_colors'].append(color)
-        # Mix window: if another primary is held within window, queue upgrade.
-        for other, other_ts in self._game_last_press.items():
-            if other == color or other_ts == 0:
-                continue
-            if time.ticks_diff(now, other_ts) <= BUTTON_MIX_WINDOW_MS:
-                mix = _MIX_OF.get((color, other))
-                if mix:
-                    actions['upgrade_mixes'].append(mix)
-                break
-        self._game_last_press[color] = now
+        # Pre-shot level adjust + mid-game abort hints. main.py decides whether
+        # to honor based on game.shots_fired_this_game(). Side-effect colors
+        # (Y from F1, M from ALT during ALT+F1 abort) are intentionally allowed
+        # to fire — game is being aborted/restarted anyway.
+        if btn_name == "f1":
+            if self.alt_at_press.get("f1", False) or self._alt_held():
+                actions['abort_game'] = True
+            else:
+                actions['level_delta'] += 1
+        elif btn_name == "f2":
+            actions['level_delta'] -= 1
 
     # ---- Short-release dispatcher (release-edge, after hold check) ----
 
     def _on_short_release(self, btn_name, actions):
-        # In game mode, row-1 already fired on press edge: nothing on release.
-        if self.game_input_mode and btn_name in ("off", "auto", "on"):
+        # Game mode: every button fires on press edge already. Releases do
+        # nothing.
+        if self.game_input_mode:
             return
 
         # ALT counts as a modifier if it was held at press time OR is still
@@ -285,7 +279,6 @@ class ButtonHandler:
         )
 
         if btn_name == "off":
-            # Bare = mode off + temporary; ALT = mode off + perma.
             self._set_mode_with_temporary("off", temporary=not alt)
             actions['mode_change'] = "off"
             actions['mode_temporary'] = (not alt)
@@ -295,30 +288,16 @@ class ButtonHandler:
             actions['mode_temporary'] = (not alt)
         elif btn_name == "auto":
             if alt:
-                # ALT+AUTO -> rainbow (temporary).
                 self._set_mode_with_temporary("rainbow", temporary=True)
                 actions['mode_change'] = "rainbow"
                 actions['mode_temporary'] = True
             else:
-                # Bare AUTO -> auto/schedule mode.
                 self.storage.set_mode("auto")
                 actions['mode_change'] = "auto"
         elif btn_name == "f1":
-            if self.game_input_mode:
-                if alt:
-                    actions['abort_game'] = True
-                else:
-                    actions['level_delta'] += 1
-            else:
-                # Outside game: F1 starts a game (ALT modifier currently ignored).
-                actions['start_game'] = True
-        elif btn_name == "f2":
-            if self.game_input_mode and not alt:
-                actions['level_delta'] -= 1
-            # F2 outside game: no-op for now.
-        elif btn_name == "alt":
-            # ALT alone: no callback at this time (per user).
-            pass
+            # Out of game: F1 starts a game.
+            actions['start_game'] = True
+        # F2 / ALT outside game: no-op.
 
     def _set_mode_with_temporary(self, mode, temporary):
         """Set mode (off/on) and the 'resume schedule at next event' flag in

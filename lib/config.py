@@ -30,7 +30,6 @@ LED_BRIGHTNESS_MAX = 255
 BUTTON_DEBOUNCE_MS = 50
 BUTTON_HOLD_MS = 1000  # How long to hold for continuous adjust
 BUTTON_COMBO_MS = 10000  # All 3 buttons for AP mode (10 seconds)
-BUTTON_MIX_WINDOW_MS = 80  # Two primaries within this window = fire mix upgrade (game mode)
 
 # Manual adjustment speeds (per 100ms while holding button)
 BRIGHTNESS_STEP = 2  # 0-100 scale
