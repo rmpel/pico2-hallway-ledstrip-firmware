@@ -3,7 +3,7 @@
 import machine
 import neopixel
 import time
-from config import PIN_LED_STRIP, NUM_LEDS, LED_START_OFFSET, LED_BRIGHTNESS_MAX
+from config import PIN_LED_STRIP, NUM_LEDS, LED_START_OFFSET, LED_BRIGHTNESS_MAX, RP_PICO_2_NEOPIXEL_COMPAT_MODE
 
 
 class LEDController:
@@ -11,9 +11,14 @@ class LEDController:
         """Initialize the WS2812 LED strip controller"""
         try:
             self.pin = machine.Pin(PIN_LED_STRIP)
-            self.strip = neopixel.NeoPixel(self.pin, NUM_LEDS)
+            if RP_PICO_2_NEOPIXEL_COMPAT_MODE:
+                from ws2812_pio import WS2812PIO
+                self.strip = WS2812PIO(PIN_LED_STRIP, NUM_LEDS)
+                print(f"LED strip initialized on pin {PIN_LED_STRIP} (PIO driver)")
+            else:
+                self.strip = neopixel.NeoPixel(self.pin, NUM_LEDS)
+                print(f"LED strip initialized on pin {PIN_LED_STRIP} (neopixel driver)")
             self.enabled = True
-            print(f"LED strip initialized on pin {PIN_LED_STRIP}")
         except Exception as e:
             print(f"LED strip init failed (this is OK if not connected): {e}")
             self.strip = None

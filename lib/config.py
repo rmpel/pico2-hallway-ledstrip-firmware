@@ -25,6 +25,11 @@ NUM_LEDS = 59  # 30 LEDs/meter strip should suffice
 LED_START_OFFSET = 1  # Skip first N LEDs (LED 0 is status LED)
 LED_BRIGHTNESS_MAX = 255
 
+# Workaround for RP2350 (Pico 2 W) neopixel timing: short strips / low-brightness
+# frames latch garbage into the first pixel. Writing the frame twice gives the
+# strip a second chance to lock the timing. Harmless on RP2040.
+RP_PICO_2_NEOPIXEL_COMPAT_MODE = True
+
 # Button timing (milliseconds)
 BUTTON_DEBOUNCE_MS = 50
 BUTTON_HOLD_MS = 1000  # How long to hold for continuous adjust
