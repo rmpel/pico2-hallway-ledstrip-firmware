@@ -16,8 +16,8 @@ from config import NUM_LEDS, LED_START_OFFSET, LED_BRIGHTNESS_MAX
 # ---------- Gameplay tunables ----------
 
 # Playfield geometry
-HOME_SKIP_LEDS = 2          # LEDs at home end excluded from playfield
-END_SKIP_LEDS = 7           # LEDs at far end excluded from playfield
+HOME_SKIP_LEDS = 3          # LEDs at home end excluded from playfield
+END_SKIP_LEDS = 0           # LEDs at far end excluded from playfield
 
 # Barrier (white "shield" near home end — protects player; touch = game over)
 BARRIER_FRACTION = 0.05    # position from home (fraction of playfield)
