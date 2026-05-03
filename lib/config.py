@@ -2,7 +2,6 @@
 
 # Access Point settings (for WiFi setup mode)
 AP_SSID_PREFIX = "PicoW-LedBar"
-AP_PASSWORD = "hallway123"
 AP_IP = "192.168.4.1"
 
 # GPIO pins
@@ -22,7 +21,7 @@ PIN_BUTTON_G = PIN_BUTTON_AUTO
 PIN_BUTTON_B = PIN_BUTTON_ON
 
 # LED strip configuration
-NUM_LEDS = 76  # 2 meters at 30 LEDs/meter
+NUM_LEDS = 59  # 30 LEDs/meter strip should suffice
 LED_START_OFFSET = 1  # Skip first N LEDs (LED 0 is status LED)
 LED_BRIGHTNESS_MAX = 255
 

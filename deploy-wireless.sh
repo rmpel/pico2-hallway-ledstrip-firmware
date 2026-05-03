@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # HallwayLedBar - Wireless deploy script
 # Pushes all code to a running Pico W over Wi-Fi using ./picp.
@@ -10,7 +10,7 @@ set -e
 
 REBOOT=0
 CHANGED_ONLY=0
-HOST="${PICO_HOST:-hallway.local}"
+HOST="${PICO_HOST:-192.168.41.107}"
 
 for arg in "$@"; do
     case "$arg" in

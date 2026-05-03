@@ -3,7 +3,7 @@
 import network
 import time
 import machine
-from config import AP_SSID_PREFIX, AP_PASSWORD, AP_IP
+from config import AP_SSID_PREFIX, AP_IP
 
 
 class WiFiManager:
