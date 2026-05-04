@@ -323,6 +323,10 @@ class WebServer:
             new_settings = json.loads(request_body)
             print(f"Parsed settings: {list(new_settings.keys())}")
 
+            # Any payload that touches the hardware block requires a reboot,
+            # including an explicit reset to {} that wipes overrides.
+            hardware_changed = "hardware" in new_settings
+
             self.storage.update_settings(new_settings)
 
             # If location changed, refresh tz offset + sun times
@@ -336,7 +340,13 @@ class WebServer:
             elif "schedule" in new_settings:
                 print("Schedule updated, recalculating transitions...")
 
-            body = json.dumps({"success": True})
+            response = {"success": True}
+            if hardware_changed:
+                # Hardware values are read by config.py at import time, so a
+                # reboot is required for changes (pins, LED count, button
+                # timings, etc.) to take effect.
+                response["reboot_required"] = True
+            body = json.dumps(response)
             self._send_response(client, "200 OK", "application/json", body)
         except ValueError as e:
             print(f"JSON parse error: {e}")

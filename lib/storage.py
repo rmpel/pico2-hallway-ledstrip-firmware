@@ -90,6 +90,8 @@ class Storage:
                     settings["reboot_time"] = DEFAULT_REBOOT_TIME
                 if "non_auto_is_temporary" not in settings:
                     settings["non_auto_is_temporary"] = False
+                if "hardware" not in settings or not isinstance(settings["hardware"], dict):
+                    settings["hardware"] = {}
                 return settings
         except (OSError, ValueError) as e:
             print(f"No settings file found, creating defaults: {e}")
@@ -112,7 +114,8 @@ class Storage:
             "tz_offset_seconds": 0,
             "tz_offset_updated": 0,
             "reboot_time": DEFAULT_REBOOT_TIME,
-            "non_auto_is_temporary": False
+            "non_auto_is_temporary": False,
+            "hardware": {}
         }
 
     def _save_wifi_config(self):
@@ -256,6 +259,72 @@ class Storage:
             del self.settings["schedule"][index]
             self._save_settings()
 
+    # Hardware settings (pin assignments, LED strip, button timings).
+    # Applied at next reboot — config.py reads /settings.json at import time.
+    def get_hardware_settings(self):
+        return self.settings.get("hardware", {}) or {}
+
+    def set_hardware_settings(self, hw_dict):
+        self.settings["hardware"] = self._sanitize_hardware(hw_dict)
+        self._save_settings()
+
+    def _sanitize_hardware(self, hw_dict):
+        """Filter to known keys and clamp to safe ranges.
+
+        Lazy-imports config to read the canonical defaults dict; this avoids
+        any import-order surprises at storage construction time.
+        """
+        if not isinstance(hw_dict, dict):
+            return {}
+        try:
+            from config import _HARDWARE_DEFAULTS
+        except ImportError:
+            return {}
+
+        pin_keys = (
+            "pin_led_strip", "pin_button_off", "pin_button_auto", "pin_button_on",
+            "pin_button_f1", "pin_button_f2", "pin_button_alt",
+            "pin_button_r", "pin_button_g", "pin_button_b",
+        )
+        bool_keys = ("rp_pico_2_neopixel_compat_mode",)
+
+        cleaned = {}
+        for key, value in hw_dict.items():
+            if key not in _HARDWARE_DEFAULTS:
+                continue
+            default = _HARDWARE_DEFAULTS[key]
+            if key in bool_keys:
+                cleaned[key] = bool(value)
+                continue
+            try:
+                ivalue = int(value)
+            except (TypeError, ValueError):
+                continue
+            if key in pin_keys:
+                # Cover both RP2040 (0-28) and RP2350 (0-47).
+                if 0 <= ivalue <= 47:
+                    cleaned[key] = ivalue
+            elif key == "num_leds":
+                if ivalue >= 1:
+                    cleaned[key] = ivalue
+            elif key == "led_start_offset":
+                if ivalue >= 0:
+                    cleaned[key] = ivalue
+            elif key == "led_brightness_max":
+                if 1 <= ivalue <= 255:
+                    cleaned[key] = ivalue
+            elif key.endswith("_ms"):
+                if ivalue >= 0:
+                    cleaned[key] = ivalue
+            elif key.endswith("_step"):
+                if ivalue >= 1:
+                    cleaned[key] = ivalue
+            else:
+                # Fallback: type-match the default.
+                if isinstance(default, int):
+                    cleaned[key] = ivalue
+        return cleaned
+
     def get_all_settings(self):
         """Get all settings (for web API) - excludes WiFi credentials"""
         return self.settings
@@ -271,6 +340,8 @@ class Storage:
                     "longitude": new_settings[key].get("longitude")
                 }
                 self.settings["location"] = loc
+            elif key == "hardware":
+                self.settings["hardware"] = self._sanitize_hardware(new_settings[key])
             else:
                 self.settings[key] = new_settings[key]
         self._save_settings()

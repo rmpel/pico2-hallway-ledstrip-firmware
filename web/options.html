@@ -42,6 +42,113 @@
             <button onclick="saveRebootTime()" class="btn btn-primary">Save Reboot Time</button>
         </div>
 
+        <div class="card">
+            <h2>Hardware</h2>
+            <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+                Pin assignments, LED strip geometry, and button timings.
+                Changes take effect after reboot.
+            </p>
+
+            <h3 style="margin-top: 10px;">LED strip</h3>
+            <div class="form-group">
+                <label>Number of LEDs:</label>
+                <input type="number" id="hw_num_leds" min="1">
+            </div>
+            <div class="form-group">
+                <label>Start offset (skip first N LEDs):</label>
+                <input type="number" id="hw_led_start_offset" min="0">
+            </div>
+            <div class="form-group">
+                <label>Max brightness (1-255):</label>
+                <input type="number" id="hw_led_brightness_max" min="1" max="255">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="hw_rp_pico_2_neopixel_compat_mode">
+                    Pico 2 (RP2350) compatibility mode (uses direct PIO Statemachine instead of NeoPixel lib)
+                </label>
+            </div>
+
+            <h3 style="margin-top: 20px;">GPIO pins (0-47)</h3>
+            <div class="form-group">
+                <label>LED strip data pin:</label>
+                <input type="number" id="hw_pin_led_strip" min="0" max="47">
+            </div>
+            <div class="form-group">
+                <label>Mode panel — Off:</label>
+                <input type="number" id="hw_pin_button_off" min="0" max="47">
+            </div>
+            <div class="form-group">
+                <label>Mode panel — Auto:</label>
+                <input type="number" id="hw_pin_button_auto" min="0" max="47">
+            </div>
+            <div class="form-group">
+                <label>Mode panel — On:</label>
+                <input type="number" id="hw_pin_button_on" min="0" max="47">
+            </div>
+            <div class="form-group">
+                <label>Function — F1:</label>
+                <input type="number" id="hw_pin_button_f1" min="0" max="47">
+            </div>
+            <div class="form-group">
+                <label>Function — F2:</label>
+                <input type="number" id="hw_pin_button_f2" min="0" max="47">
+            </div>
+            <div class="form-group">
+                <label>Function — Alt:</label>
+                <input type="number" id="hw_pin_button_alt" min="0" max="47">
+            </div>
+            <div class="form-group">
+                <label>Game button — Red:</label>
+                <input type="number" id="hw_pin_button_r" min="0" max="47">
+            </div>
+            <div class="form-group">
+                <label>Game button — Green:</label>
+                <input type="number" id="hw_pin_button_g" min="0" max="47">
+            </div>
+            <div class="form-group">
+                <label>Game button — Blue:</label>
+                <input type="number" id="hw_pin_button_b" min="0" max="47">
+            </div>
+
+            <h3 style="margin-top: 20px;">Button timing (ms)</h3>
+            <div class="form-group">
+                <label>Debounce:</label>
+                <input type="number" id="hw_button_debounce_ms" min="0">
+            </div>
+            <div class="form-group">
+                <label>Hold threshold:</label>
+                <input type="number" id="hw_button_hold_ms" min="0">
+            </div>
+            <div class="form-group">
+                <label>3-button combo (AP mode):</label>
+                <input type="number" id="hw_button_combo_ms" min="0">
+            </div>
+
+            <h3 style="margin-top: 20px;">Adjust step rates (per 100ms hold)</h3>
+            <div class="form-group">
+                <label>Brightness step (0-100 scale):</label>
+                <input type="number" id="hw_brightness_step" min="1">
+            </div>
+            <div class="form-group">
+                <label>Hue step (0-360 scale):</label>
+                <input type="number" id="hw_hue_step" min="1">
+            </div>
+            <div class="form-group">
+                <label>Saturation step (0-100 scale):</label>
+                <input type="number" id="hw_saturation_step" min="1">
+            </div>
+
+            <h3 style="margin-top: 20px;">Scheduler</h3>
+            <div class="form-group">
+                <label>Transition update interval (ms):</label>
+                <input type="number" id="hw_transition_update_ms" min="0">
+            </div>
+
+            <button onclick="saveHardware()" class="btn btn-primary">Save Hardware Settings</button>
+            <button onclick="resetHardware()" class="btn btn-danger">Reset to Defaults</button>
+        </div>
+
         <div id="message" class="message"></div>
     </div>
 </body>
