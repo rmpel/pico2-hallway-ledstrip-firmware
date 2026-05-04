@@ -4,6 +4,10 @@
 # settings.json mode. The main loop calls Game.tick() each iteration when
 # is_active() is True; cross-thread mutators (start/stop/shoot) are called
 # from the web server on core 1 and queue work for core 0 via a small lock.
+#
+# Gameplay tunables are overridable via /settings.json under a "game" key.
+# Overrides are read once at module import time, so changes take effect on
+# the next reboot.
 
 import json
 import time
@@ -14,49 +18,112 @@ from config import NUM_LEDS, LED_START_OFFSET, LED_BRIGHTNESS_MAX
 
 
 # ---------- Gameplay tunables ----------
+# Defaults; also acts as the allow-list for runtime overrides from the web UI.
+_GAME_DEFAULTS = {
+    # Playfield geometry
+    "home_skip_leds": 3,                  # LEDs at home end excluded from playfield
+    "end_skip_leds": 0,                   # LEDs at far end excluded from playfield
+    # Barrier (white "shield" near home end — protects player; touch = game over)
+    "barrier_fraction": 0.05,             # position from home (fraction of playfield)
+    "barrier_brightness": 0.20,           # white intensity 0..1
+    # Enemy shield (far end — hit it with any ball to win the level).
+    # Position is measured FROM the far end. Per-level shift is subtractive
+    # (shield retreats toward the enemy/far end each level). Max is a floor
+    # in the from-end frame, so it must be smaller than the base.
+    # Dual-meaning: < 1 = fraction of playfield; >= 1 = exact LED count.
+    "enemy_shield_fraction": 0.3,             # base offset from far end at level 1
+    "enemy_shield_fraction_per_level": 0.05,  # subtracted from offset each level
+    "enemy_shield_fraction_max": 0.1,         # floor: closest to far end shield can retreat
+    "enemy_shield_brightness": 0.30,          # cyan intensity 0..1
+    # Snake start length per level
+    "start_fraction": 0.50,               # level-1 start length / playfield
+    "grow_per_level": 2,                  # extra LEDs per level
+    "max_fraction": 0.75,                 # cap on snake start length
+    # Snake advance rate
+    "grow_tick_ms": 3000,                 # at level 1
+    "grow_speedup_ms": 100,               # shaved per additional level
+    "grow_tick_min_ms": 300,              # floor
+    # Ball travel
+    "ball_tick_ms": 60,
+    "ball_becomes_head_level": 5,         # at this level and up, wrong-color ball joins snake
+    "pending_shots_cap": 8,
+    # Intro timing
+    "intro_flash_on_ms": 150,
+    "intro_flash_off_ms": 150,
+    "intro_hs_hold_ms": 800,
+    "intro_materialize_ms": 40,
+    # Win/gameover
+    "win_anim_step_ms": 25,
+    "win_fade_ms": 600,
+    "gameover_march_speedup": 4,          # march-home runs this much faster than the level's grow cadence
+}
+
+
+def _load_game_overrides():
+    """Read /settings.json and return its 'game' dict, or {} on any error."""
+    try:
+        with open("/settings.json", "r") as f:
+            data = json.load(f)
+        g = data.get("game") if isinstance(data, dict) else None
+        return g if isinstance(g, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+_overrides = _load_game_overrides()
+
+
+def _g(key):
+    return _overrides.get(key, _GAME_DEFAULTS[key])
+
+
+def _resolve_count(value, pf_len):
+    """Dual-meaning: < 1 => fraction of pf_len; >= 1 => exact LED count."""
+    if value < 1:
+        return int(pf_len * value)
+    return int(value)
+
 
 # Playfield geometry
-HOME_SKIP_LEDS = 3          # LEDs at home end excluded from playfield
-END_SKIP_LEDS = 0           # LEDs at far end excluded from playfield
+HOME_SKIP_LEDS = _g("home_skip_leds")
+END_SKIP_LEDS = _g("end_skip_leds")
 
-# Barrier (white "shield" near home end — protects player; touch = game over)
-BARRIER_FRACTION = 0.05    # position from home (fraction of playfield)
-BARRIER_BRIGHTNESS = 0.20   # white intensity 0..1
+# Barrier
+BARRIER_FRACTION = _g("barrier_fraction")
+BARRIER_BRIGHTNESS = _g("barrier_brightness")
 
-# Enemy shield (far end — hit it with any ball to win the level).
-# Always rendered during play; "shootable" once the snake's head has reached
-# (or retreated past) the shield position.
-ENEMY_SHIELD_FRACTION = 0.7              # base position at level 1 (fraction of playfield)
-ENEMY_SHIELD_FRACTION_PER_LEVEL = 0.05   # shifted further toward the enemy each level
-ENEMY_SHIELD_FRACTION_MAX = 0.9          # cap so the shield never reaches the far end
-ENEMY_SHIELD_BRIGHTNESS = 0.30           # cyan intensity 0..1
+# Enemy shield
+ENEMY_SHIELD_FRACTION = _g("enemy_shield_fraction")
+ENEMY_SHIELD_FRACTION_PER_LEVEL = _g("enemy_shield_fraction_per_level")
+ENEMY_SHIELD_FRACTION_MAX = _g("enemy_shield_fraction_max")
+ENEMY_SHIELD_BRIGHTNESS = _g("enemy_shield_brightness")
 
 # Snake start length per level
-START_FRACTION = 0.50       # level-1 start length / playfield
-GROW_PER_LEVEL = 2          # extra LEDs per level
-MAX_FRACTION = 0.75         # cap on snake start length
+START_FRACTION = _g("start_fraction")
+GROW_PER_LEVEL = _g("grow_per_level")
+MAX_FRACTION = _g("max_fraction")
 
 # Snake advance rate
-GROW_TICK_MS = 3000          # at level 1
-GROW_SPEEDUP_MS = 100         # shaved per additional level
-GROW_TICK_MIN_MS = 300       # floor
+GROW_TICK_MS = _g("grow_tick_ms")
+GROW_SPEEDUP_MS = _g("grow_speedup_ms")
+GROW_TICK_MIN_MS = _g("grow_tick_min_ms")
 
 # Ball travel
-BALL_TICK_MS = 60
+BALL_TICK_MS = _g("ball_tick_ms")
 BALL_DEBOUNCE_MS = BALL_TICK_MS
-BALL_BECOMES_HEAD_LEVEL = 5  # at this level and up, wrong-color ball joins snake
-PENDING_SHOTS_CAP = 8
+BALL_BECOMES_HEAD_LEVEL = _g("ball_becomes_head_level")
+PENDING_SHOTS_CAP = _g("pending_shots_cap")
 
 # Intro timing
-INTRO_FLASH_ON_MS = 150
-INTRO_FLASH_OFF_MS = 150
-INTRO_HS_HOLD_MS = 800
-INTRO_MATERIALIZE_MS = 40
+INTRO_FLASH_ON_MS = _g("intro_flash_on_ms")
+INTRO_FLASH_OFF_MS = _g("intro_flash_off_ms")
+INTRO_HS_HOLD_MS = _g("intro_hs_hold_ms")
+INTRO_MATERIALIZE_MS = _g("intro_materialize_ms")
 
 # Win/gameover
-WIN_ANIM_STEP_MS = 25
-WIN_FADE_MS = 600
-GAMEOVER_MARCH_SPEEDUP = 4  # march-home runs this much faster than the level's grow cadence
+WIN_ANIM_STEP_MS = _g("win_anim_step_ms")
+WIN_FADE_MS = _g("win_fade_ms")
+GAMEOVER_MARCH_SPEEDUP = _g("gameover_march_speedup")
 
 # Persistence
 HIGHSCORE_FILE = "/game.json"
@@ -162,9 +229,12 @@ class Game:
         self._pf_start = LED_START_OFFSET + HOME_SKIP_LEDS
         self._pf_end = NUM_LEDS - 1 - END_SKIP_LEDS
         self._pf_len = max(0, self._pf_end - self._pf_start + 1)
-        self._barrier_pf_idx = int(self._pf_len * BARRIER_FRACTION)
-        # Shield position depends on level; primed in _begin_game.
-        self._enemy_shield_pf_idx = int(self._pf_len * ENEMY_SHIELD_FRACTION)
+        self._barrier_pf_idx = _resolve_count(BARRIER_FRACTION, self._pf_len)
+        # Shield position depends on level; primed in _begin_game. Initial
+        # value here uses the level-1 from-end offset.
+        self._enemy_shield_pf_idx = max(
+            0, self._pf_len - 1 - _resolve_count(ENEMY_SHIELD_FRACTION, self._pf_len)
+        )
 
         # Snake state
         # snake_balls[0] is the head (closest to home).
@@ -334,18 +404,31 @@ class Game:
         self._pf_start = LED_START_OFFSET + HOME_SKIP_LEDS
         self._pf_end = NUM_LEDS - 1 - END_SKIP_LEDS
         self._pf_len = max(0, self._pf_end - self._pf_start + 1)
-        self._barrier_pf_idx = int(self._pf_len * BARRIER_FRACTION)
+        self._barrier_pf_idx = _resolve_count(BARRIER_FRACTION, self._pf_len)
+        if self._barrier_pf_idx < 0:
+            self._barrier_pf_idx = 0
+        if self._barrier_pf_idx > self._pf_len - 1:
+            self._barrier_pf_idx = self._pf_len - 1
         self._recompute_shield_idx()
         self._enter_intro_flash(now)
 
     def _recompute_shield_idx(self):
-        """Shield position scales with level: base + per-level shift, capped."""
-        frac = ENEMY_SHIELD_FRACTION + ENEMY_SHIELD_FRACTION_PER_LEVEL * (self.level - 1)
-        if frac > ENEMY_SHIELD_FRACTION_MAX:
-            frac = ENEMY_SHIELD_FRACTION_MAX
-        # Also clamp to a sensible max within the playfield (leave at least one
-        # LED past the shield so the snake-around-shield render has room).
-        idx = int(self._pf_len * frac)
+        """Shield position is measured from the far end. Subtractive per-level
+        shift retreats the shield toward the enemy/far end as level rises;
+        MAX is the floor (closest to far end the shield can get)."""
+        base = _resolve_count(ENEMY_SHIELD_FRACTION, self._pf_len)
+        step = _resolve_count(ENEMY_SHIELD_FRACTION_PER_LEVEL, self._pf_len)
+        floor_from_end = _resolve_count(ENEMY_SHIELD_FRACTION_MAX, self._pf_len)
+        from_end = base - step * (self.level - 1)
+        if from_end < floor_from_end:
+            from_end = floor_from_end
+        # Convert from-end offset to playfield index. from_end=0 is the last
+        # LED; from_end=1 is the second-to-last, etc.
+        idx = self._pf_len - 1 - from_end
+        # Clamp: keep at least one LED past it (so the snake-around-shield
+        # render has room) and at least one LED before it.
+        if idx < 1:
+            idx = 1
         if idx > self._pf_len - 2:
             idx = self._pf_len - 2
         self._enemy_shield_pf_idx = idx
@@ -357,9 +440,9 @@ class Game:
         return self._pf_start + pf_idx
 
     def _start_length(self, level):
-        base = int(self._pf_len * START_FRACTION)
+        base = _resolve_count(START_FRACTION, self._pf_len)
         extra = GROW_PER_LEVEL * (level - 1)
-        cap = int(self._pf_len * MAX_FRACTION)
+        cap = _resolve_count(MAX_FRACTION, self._pf_len)
         return max(1, min(base + extra, cap))
 
     def _grow_interval_ms(self, level):

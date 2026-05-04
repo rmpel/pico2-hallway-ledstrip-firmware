@@ -22,8 +22,10 @@ The LED strip is split into:
 
 Within the playfield:
 
-- **Home barrier** sits at `int(_pf_len * BARRIER_FRACTION)` (default 12.5% from home).
-- **Enemy shield** position is level-dependent: `int(_pf_len * effective_fraction)` where `effective_fraction = min(ENEMY_SHIELD_FRACTION_MAX, ENEMY_SHIELD_FRACTION + ENEMY_SHIELD_FRACTION_PER_LEVEL * (level - 1))`. The shield retreats further into the enemy base each level, capped so it never reaches the very last LED.
+- **Home barrier** sits at `_resolve_count(BARRIER_FRACTION, _pf_len)` LEDs in from the home end.
+- **Enemy shield** is anchored to the **far end**. Its from-end offset is level-dependent: `from_end = max(ENEMY_SHIELD_FRACTION_MAX, ENEMY_SHIELD_FRACTION - ENEMY_SHIELD_FRACTION_PER_LEVEL * (level - 1))`, then `idx = _pf_len - 1 - from_end`. Each level subtracts the per-level value, so the shield retreats further toward the enemy base; `MAX` is the **floor** in the from-end frame (must be smaller than the base value), guaranteeing the shield never reaches the very last LED.
+
+**Dual-meaning values.** `BARRIER_FRACTION`, `ENEMY_SHIELD_FRACTION`, `ENEMY_SHIELD_FRACTION_PER_LEVEL`, `ENEMY_SHIELD_FRACTION_MAX`, `START_FRACTION`, and `MAX_FRACTION` accept either a fraction (`< 1`, scaled by playfield length) or an exact LED count (`>= 1`, used as-is). The resolver lives in `lib/game.py` as `_resolve_count(value, pf_len)`. This lets the same configuration value behave sensibly across short and long strips: small fractions on long strips, exact counts when fractions would round to 0.
 
 The **head** of the snake is the home-side end of the snake (closest to the player — the engagement end). The **tail** is the far-side end, anchored at `pf_len - 1`. The snake renders in a contiguous block; new balls are appended at the tail and the whole block shifts toward the player on each grow tick.
 
@@ -176,19 +178,19 @@ All tunables live at the top of `lib/game.py`. Defaults shown.
 |------------------------|---------|---------|
 | `HOME_SKIP_LEDS`       | 2       | LEDs at home end excluded from playfield |
 | `END_SKIP_LEDS`        | 1       | LEDs at far end excluded from playfield |
-| `BARRIER_FRACTION`     | 0.125   | Home barrier position (fraction of playfield from home) |
+| `BARRIER_FRACTION`     | 0.05    | Home barrier position from home end. Dual-meaning (fraction or LED count) |
 | `BARRIER_BRIGHTNESS`   | 0.20    | Home barrier crackle intensity (0..1) |
-| `ENEMY_SHIELD_FRACTION` | 0.7    | Enemy shield position at level 1 (fraction from home) |
-| `ENEMY_SHIELD_FRACTION_PER_LEVEL` | 0.05 | Shifted further from home each level |
-| `ENEMY_SHIELD_FRACTION_MAX` | 0.9   | Cap on shield position (must stay short of the last LED) |
+| `ENEMY_SHIELD_FRACTION` | 0.3    | Enemy shield base offset from FAR end at level 1. Dual-meaning |
+| `ENEMY_SHIELD_FRACTION_PER_LEVEL` | 0.05 | Subtracted from offset each level (shield retreats toward enemy). Dual-meaning |
+| `ENEMY_SHIELD_FRACTION_MAX` | 0.1   | Floor for the from-end offset (closest to far end the shield can retreat). Must be < base. Dual-meaning |
 | `ENEMY_SHIELD_BRIGHTNESS` | 0.30 | Enemy shield crackle intensity (0..1) |
 
 ### Snake
 | Constant            | Default | Meaning |
 |---------------------|---------|---------|
-| `START_FRACTION`    | 0.50    | Level-1 starting snake length (fraction of playfield) |
-| `GROW_PER_LEVEL`    | 2       | Extra LEDs per level |
-| `MAX_FRACTION`      | 0.75    | Cap on starting snake length |
+| `START_FRACTION`    | 0.50    | Level-1 starting snake length. Dual-meaning (fraction or LED count) |
+| `GROW_PER_LEVEL`    | 2       | Extra LEDs per level (always exact LED count) |
+| `MAX_FRACTION`      | 0.75    | Cap on starting snake length. Dual-meaning |
 | `GROW_TICK_MS`      | 1500    | Snake step interval at level 1 |
 | `GROW_SPEEDUP_MS`   | 75      | Shaved per additional level |
 | `GROW_TICK_MIN_MS`  | 300     | Floor for grow interval |

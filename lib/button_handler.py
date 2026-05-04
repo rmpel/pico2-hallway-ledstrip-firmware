@@ -12,6 +12,9 @@ from config import (
     PIN_BUTTON_R,
     PIN_BUTTON_G,
     PIN_BUTTON_B,
+    PIN_BUTTON_Y,
+    PIN_BUTTON_C,
+    PIN_BUTTON_M,
     BUTTON_DEBOUNCE_MS,
     BUTTON_HOLD_MS,
     BUTTON_COMBO_MS,
@@ -79,15 +82,21 @@ class ButtonHandler:
         self.game_input_mode = False
 
         # Per-button-name -> game shoot color, resolved from pin numbers so the
-        # user can re-map pins without changing this mapping.
+        # user can re-map pins without changing this mapping. R/G/B aliases
+        # cover row 1 (off/auto/on); Y/C/M aliases cover row 2 (f1/f2/alt).
         self._game_color_by_btn = {}
-        for btn_name, pin in (("off", PIN_BUTTON_OFF), ("auto", PIN_BUTTON_AUTO), ("on", PIN_BUTTON_ON)):
-            if pin == PIN_BUTTON_R:
-                self._game_color_by_btn[btn_name] = "R"
-            elif pin == PIN_BUTTON_G:
-                self._game_color_by_btn[btn_name] = "G"
-            elif pin == PIN_BUTTON_B:
-                self._game_color_by_btn[btn_name] = "B"
+        _color_by_pin = (
+            (PIN_BUTTON_R, "R"), (PIN_BUTTON_G, "G"), (PIN_BUTTON_B, "B"),
+            (PIN_BUTTON_Y, "Y"), (PIN_BUTTON_C, "C"), (PIN_BUTTON_M, "M"),
+        )
+        for btn_name, pin in (
+            ("off", PIN_BUTTON_OFF), ("auto", PIN_BUTTON_AUTO), ("on", PIN_BUTTON_ON),
+            ("f1", PIN_BUTTON_F1), ("f2", PIN_BUTTON_F2), ("alt", PIN_BUTTON_ALT),
+        ):
+            for alias_pin, color in _color_by_pin:
+                if pin == alias_pin:
+                    self._game_color_by_btn[btn_name] = color
+                    break
 
         # Last logged button-state snapshot (raw pin reads). Used to print a
         # status line only when something changes.
@@ -257,18 +266,10 @@ class ButtonHandler:
     # ---- Game-mode press-edge handler (all 6 buttons fire a color) ----
 
     def _on_game_press_edge(self, btn_name, now, actions):
-        # Row 1: configurable R/G/B mapping (PIN_BUTTON_R/G/B aliases).
-        # Row 2: F1=Y, F2=C, ALT=M.
-        if btn_name in ("off", "auto", "on"):
-            color = self._game_color_by_btn.get(btn_name)
-        elif btn_name == "f1":
-            color = "Y"
-        elif btn_name == "f2":
-            color = "C"
-        elif btn_name == "alt":
-            color = "M"
-        else:
-            color = None
+        # Both rows route through the pin-resolved color map. Defaults wire
+        # off/auto/on -> R/G/B and f1/f2/alt -> Y/C/M, but any of the six
+        # buttons can be re-pinned to any color via the hardware settings.
+        color = self._game_color_by_btn.get(btn_name)
         if color is None:
             return
         actions['shoot_colors'].append(color)

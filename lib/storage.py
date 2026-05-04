@@ -92,6 +92,8 @@ class Storage:
                     settings["non_auto_is_temporary"] = False
                 if "hardware" not in settings or not isinstance(settings["hardware"], dict):
                     settings["hardware"] = {}
+                if "game" not in settings or not isinstance(settings["game"], dict):
+                    settings["game"] = {}
                 return settings
         except (OSError, ValueError) as e:
             print(f"No settings file found, creating defaults: {e}")
@@ -115,7 +117,8 @@ class Storage:
             "tz_offset_updated": 0,
             "reboot_time": DEFAULT_REBOOT_TIME,
             "non_auto_is_temporary": False,
-            "hardware": {}
+            "hardware": {},
+            "game": {}
         }
 
     def _save_wifi_config(self):
@@ -285,6 +288,7 @@ class Storage:
             "pin_led_strip", "pin_button_off", "pin_button_auto", "pin_button_on",
             "pin_button_f1", "pin_button_f2", "pin_button_alt",
             "pin_button_r", "pin_button_g", "pin_button_b",
+            "pin_button_y", "pin_button_c", "pin_button_m",
         )
         bool_keys = ("rp_pico_2_neopixel_compat_mode",)
 
@@ -325,6 +329,83 @@ class Storage:
                     cleaned[key] = ivalue
         return cleaned
 
+    # Game settings (gameplay tunables for lib/game.py).
+    # Applied at next reboot — game.py reads /settings.json at import time.
+    def get_game_settings(self):
+        return self.settings.get("game", {}) or {}
+
+    def set_game_settings(self, game_dict):
+        self.settings["game"] = self._sanitize_game(game_dict)
+        self._save_settings()
+
+    def _sanitize_game(self, game_dict):
+        """Filter to known keys and clamp to safe ranges."""
+        if not isinstance(game_dict, dict):
+            return {}
+        try:
+            from game import _GAME_DEFAULTS
+        except ImportError:
+            return {}
+
+        # Dual-meaning keys: < 1 = fraction of playfield, >= 1 = exact LED
+        # count. Only the lower bound (>= 0) is enforced here.
+        dual_meaning_keys = (
+            "barrier_fraction",
+            "enemy_shield_fraction", "enemy_shield_fraction_per_level",
+            "enemy_shield_fraction_max",
+            "start_fraction", "max_fraction",
+        )
+        # True fractions: brightness intensities, must stay in [0.0, 1.0].
+        brightness_keys = (
+            "barrier_brightness", "enemy_shield_brightness",
+        )
+        nonneg_int_keys = (
+            "home_skip_leds", "end_skip_leds",
+            "grow_per_level", "ball_becomes_head_level",
+        )
+        positive_int_keys = (
+            "grow_tick_ms", "grow_speedup_ms", "grow_tick_min_ms",
+            "ball_tick_ms", "pending_shots_cap",
+            "intro_flash_on_ms", "intro_flash_off_ms",
+            "intro_hs_hold_ms", "intro_materialize_ms",
+            "win_anim_step_ms", "win_fade_ms",
+            "gameover_march_speedup",
+        )
+
+        cleaned = {}
+        for key, value in game_dict.items():
+            if key not in _GAME_DEFAULTS:
+                continue
+            if key in dual_meaning_keys:
+                try:
+                    fvalue = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if fvalue >= 0.0:
+                    cleaned[key] = fvalue
+            elif key in brightness_keys:
+                try:
+                    fvalue = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if 0.0 <= fvalue <= 1.0:
+                    cleaned[key] = fvalue
+            elif key in nonneg_int_keys:
+                try:
+                    ivalue = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if ivalue >= 0:
+                    cleaned[key] = ivalue
+            elif key in positive_int_keys:
+                try:
+                    ivalue = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if ivalue >= 1:
+                    cleaned[key] = ivalue
+        return cleaned
+
     def get_all_settings(self):
         """Get all settings (for web API) - excludes WiFi credentials"""
         return self.settings
@@ -342,6 +423,8 @@ class Storage:
                 self.settings["location"] = loc
             elif key == "hardware":
                 self.settings["hardware"] = self._sanitize_hardware(new_settings[key])
+            elif key == "game":
+                self.settings["game"] = self._sanitize_game(new_settings[key])
             else:
                 self.settings[key] = new_settings[key]
         self._save_settings()

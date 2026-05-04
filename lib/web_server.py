@@ -323,9 +323,9 @@ class WebServer:
             new_settings = json.loads(request_body)
             print(f"Parsed settings: {list(new_settings.keys())}")
 
-            # Any payload that touches the hardware block requires a reboot,
-            # including an explicit reset to {} that wipes overrides.
-            hardware_changed = "hardware" in new_settings
+            # Any payload that touches the hardware or game blocks requires a
+            # reboot — both modules read /settings.json at import time.
+            reboot_required = ("hardware" in new_settings) or ("game" in new_settings)
 
             self.storage.update_settings(new_settings)
 
@@ -341,10 +341,9 @@ class WebServer:
                 print("Schedule updated, recalculating transitions...")
 
             response = {"success": True}
-            if hardware_changed:
-                # Hardware values are read by config.py at import time, so a
-                # reboot is required for changes (pins, LED count, button
-                # timings, etc.) to take effect.
+            if reboot_required:
+                # Hardware/game values are read at import time, so a reboot
+                # is required for changes to take effect.
                 response["reboot_required"] = True
             body = json.dumps(response)
             self._send_response(client, "200 OK", "application/json", body)

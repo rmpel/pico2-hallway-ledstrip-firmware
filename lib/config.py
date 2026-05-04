@@ -36,10 +36,15 @@ _HARDWARE_DEFAULTS = {
     "pin_button_f1": 20,
     "pin_button_f2": 21,
     "pin_button_alt": 22,
-    # Game button mapping (defaults to mode-panel buttons)
+    # Game button mapping (defaults: R/G/B alias mode-panel buttons,
+    # Y/C/M alias the F1/F2/ALT row). Set to dedicated pins for a 6-button
+    # gamepad without overlap.
     "pin_button_r": 16,
     "pin_button_g": 17,
     "pin_button_b": 18,
+    "pin_button_y": 20,
+    "pin_button_c": 21,
+    "pin_button_m": 22,
     # LED strip
     "num_leds": 12,
     "led_start_offset": 0,
@@ -91,6 +96,9 @@ PIN_BUTTON_ALT = _h("pin_button_alt")
 PIN_BUTTON_R = _h("pin_button_r")
 PIN_BUTTON_G = _h("pin_button_g")
 PIN_BUTTON_B = _h("pin_button_b")
+PIN_BUTTON_Y = _h("pin_button_y")
+PIN_BUTTON_C = _h("pin_button_c")
+PIN_BUTTON_M = _h("pin_button_m")
 
 # LED strip
 NUM_LEDS = _h("num_leds")
