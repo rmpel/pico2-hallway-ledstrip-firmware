@@ -1,5 +1,3 @@
-claude --resume 3d37495c-b295-46aa-9263-45a2d9a3035c
-
 # More Games — Implementation Plan
 
 This document is the agreed implementation spec. Implementer should follow it as-written; deviations require approval.
