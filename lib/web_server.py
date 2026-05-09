@@ -158,7 +158,7 @@ def _sha256_of_file(path):
 
 
 class WebServer:
-    def __init__(self, storage, wifi_manager, scheduler, sun_times, ntp_sync=None, tz_offset=None, game=None):
+    def __init__(self, storage, wifi_manager, scheduler, sun_times, ntp_sync=None, tz_offset=None, game=None, simon=None):
         """Initialize web server"""
         self.storage = storage
         self.wifi = wifi_manager
@@ -167,6 +167,7 @@ class WebServer:
         self.ntp = ntp_sync
         self.tz_offset = tz_offset
         self.game = game
+        self.simon = simon
         self.socket = None
         self.preview_active = False
 
@@ -325,7 +326,11 @@ class WebServer:
 
             # Any payload that touches the hardware or game blocks requires a
             # reboot — both modules read /settings.json at import time.
-            reboot_required = ("hardware" in new_settings) or ("game" in new_settings)
+            reboot_required = (
+                "hardware" in new_settings
+                or "game" in new_settings
+                or "game2" in new_settings
+            )
 
             self.storage.update_settings(new_settings)
 
@@ -369,6 +374,13 @@ class WebServer:
             ssid = data.get("ssid")
             password = data.get("password")
             print(f"SSID: {ssid}, Password: ***")
+            try:
+                import hashlib as _hh, binascii as _bb
+                _h = _hh.sha256(); _h.update((password or "").encode("utf-8"))
+                _b = (password or "").encode("utf-8")
+                print(f"  form pw len={len(password or '')} sha[0:8]={_bb.hexlify(_h.digest()[:4]).decode()} head={repr(_b[:3])} tail={repr(_b[-3:])}")
+            except Exception as _e:
+                print(f"  form pw diag failed: {_e}")
 
             if not ssid or not password:
                 body = json.dumps({"success": False, "error": "Missing ssid or password"})
@@ -462,6 +474,10 @@ class WebServer:
         if self.game is None:
             self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
             return
+        # Refuse-if-busy when a different game owns the strip.
+        if self.simon is not None and self.simon.is_active():
+            self._send_json(client, "409 Conflict", {"success": False, "error": "busy"})
+            return
         level = 1
         if request_body:
             try:
@@ -512,6 +528,52 @@ class WebServer:
             self._send_json(client, "200 OK", {"success": True})
         except Exception as e:
             self._send_json(client, "400 Bad Request", {"success": False, "error": str(e)})
+
+    # ---- Game 2 (Simon Says) ----
+
+    def _handle_api_game2_start(self, client):
+        if self.simon is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        # Refuse-if-busy: another game running, or simon already running.
+        if self.game is not None and self.game.is_active():
+            self._send_json(client, "409 Conflict", {"success": False, "error": "busy"})
+            return
+        if self.simon.is_active():
+            # Already running — treat as success so the page can settle.
+            self._send_json(client, "200 OK", {"success": True})
+            return
+        self.simon.start()
+        self._send_json(client, "200 OK", {"success": True})
+
+    def _handle_api_game2_stop(self, client):
+        if self.simon is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        self.simon.stop()
+        self._send_json(client, "200 OK", {"success": True})
+
+    def _handle_api_game2_input(self, client, request_body):
+        """POST /api/game2/input {"color": "R"|"G"|"B"|"Y"}"""
+        if self.simon is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        try:
+            data = json.loads(request_body)
+            color = data.get("color")
+            if color not in ("R", "G", "B", "Y"):
+                self._send_json(client, "400 Bad Request", {"success": False, "error": "invalid color"})
+                return
+            self.simon.input(color)
+            self._send_json(client, "200 OK", {"success": True})
+        except Exception as e:
+            self._send_json(client, "400 Bad Request", {"success": False, "error": str(e)})
+
+    def _handle_api_game2_status(self, client):
+        if self.simon is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        self._send_json(client, "200 OK", self.simon.get_status())
 
     def _handle_upload(self, client, query, total_body_len, leftover):
         """Stream body to /staging/<path>, hash it, validate, atomically rename."""
@@ -842,6 +904,24 @@ class WebServer:
 
             elif path == '/api/game/upgrade' and method == 'POST':
                 self._handle_api_game_upgrade(client, body)
+
+            elif path == '/game2' or path == '/game2.html':
+                self._send_static(client, '/web/game2.html', "text/html")
+
+            elif path == '/game2.js':
+                self._send_static(client, '/web/game2.js', "application/javascript")
+
+            elif path == '/api/game2/start' and method == 'POST':
+                self._handle_api_game2_start(client)
+
+            elif path == '/api/game2/stop' and method == 'POST':
+                self._handle_api_game2_stop(client)
+
+            elif path == '/api/game2/input' and method == 'POST':
+                self._handle_api_game2_input(client, body)
+
+            elif path == '/api/game2/status' and method == 'GET':
+                self._handle_api_game2_status(client)
 
             elif path == '/api/files/list' and method == 'GET':
                 self._handle_files_list(client)

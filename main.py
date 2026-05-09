@@ -1,22 +1,45 @@
 # HallwayLedBar - Main Program
 # Pi Pico W LED strip controller with web interface and sunrise/sunset scheduling
 
+import gc
 import time
 import machine
 import _thread
 
-# Import our modules
-from lib.config import TRANSITION_UPDATE_MS
+# Free anything left over from the boot sequence before we start importing
+# our own modules — every byte of contiguous heap matters on the Pico W.
+gc.collect()
+
+# Import our modules. `gc.collect()` between groups keeps fragmentation low
+# enough to start the second-core web-server thread (which needs ~4 KB
+# contiguous for its stack).
+from lib.config import TRANSITION_UPDATE_MS, NUM_LEDS, LED_START_OFFSET
 from lib.storage import Storage
 from lib.led_controller import LEDController
 from lib.button_handler import ButtonHandler
+gc.collect()
 from lib.wifi_manager import WiFiManager
 from lib.scheduler import Scheduler
 from lib.sun_times import SunTimes
-from lib.web_server import WebServer
 from lib.ntp_sync import NTPSync
 from lib.tz_offset import TzOffset
+gc.collect()
+from lib.web_server import WebServer
 from lib.game import Game
+from lib.game2 import SimonGame, resolve_simon_button_map
+from lib.game_common import GameRegistry
+gc.collect()
+
+
+# Game-select carousel: ordered list of game slot names. F1 in lighting mode
+# opens the carousel showing N centered white LEDs (one per slot); F1 cycles
+# through them; F2 starts the highlighted slot. Adding a future game appends
+# to this tuple. Master Mind slot reserved for a follow-up phase.
+_CAROUSEL_SLOTS = ("snake", "simon")
+
+# Carousel timings
+_CAROUSEL_IDLE_MS = 10000      # auto-close after 10 s of no F1/F2
+_CAROUSEL_FLASH_MS = 250        # half-period of the white/yellow flash (2 Hz)
 
 
 class HallwayLedBar:
@@ -35,9 +58,18 @@ class HallwayLedBar:
         self.ntp = NTPSync(self.storage)
         self.tz_offset = TzOffset(self.storage)
         self.buttons = ButtonHandler(self.storage, self.led)
+        # GameRegistry tracks every active-game so each can refuse-if-busy.
+        # Snake doesn't inherit from BaseGame but exposes is_active(), which is
+        # all the registry needs.
+        self.registry = GameRegistry()
         self.game = Game(self.led, self.storage)
-        self.game.on_active_change = lambda active: self.buttons.set_game_input_mode(active)
-        self.web_server = WebServer(self.storage, self.wifi, self.scheduler, self.sun_times, self.ntp, self.tz_offset, self.game)
+        self.registry.register(self.game)
+        self.game.on_active_change = lambda active: self._on_game_active_change("snake", active)
+        self.simon = SimonGame(self.led, self.storage, self.registry)
+        self.simon.on_active_change = lambda active: self._on_game_active_change("simon", active)
+        # Cache Simon's button map so we only resolve it once per boot.
+        self._simon_color_map = resolve_simon_button_map()
+        self.web_server = WebServer(self.storage, self.wifi, self.scheduler, self.sun_times, self.ntp, self.tz_offset, self.game, self.simon)
 
         # State
         self.last_transition_update = 0
@@ -48,6 +80,13 @@ class HallwayLedBar:
         self.ntp_sync_interval = 3600000  # Sync time every hour
         self.reboot_check_interval = 30000  # Check scheduled reboot every 30s
         self.web_server_running = False
+
+        # Game-select carousel state
+        self._carousel_active = False
+        self._carousel_idx = 0
+        self._carousel_idle_until = 0
+        self._carousel_flash_yellow = False
+        self._carousel_flash_next_toggle = 0
 
         # Start up
         self._startup()
@@ -124,7 +163,12 @@ class HallwayLedBar:
     def _start_web_server_thread(self):
         """Start web server on second CPU core"""
         if not self.web_server_running:
-            print("Starting web server on core 1...")
+            # The second-core thread allocates ~4 KB contiguous for its stack.
+            # Forcing a GC right before maximises the chance that block exists
+            # without fragmentation.
+            gc.collect()
+            free = gc.mem_free() if hasattr(gc, "mem_free") else -1
+            print(f"Starting web server on core 1... (free heap ~{free} B)")
             _thread.start_new_thread(self._web_server_loop, ())
             self.web_server_running = True
 
@@ -138,14 +182,156 @@ class HallwayLedBar:
             except Exception as e:
                 print(f"Web server error: {e}")
 
+    # ---------- Game-select carousel ----------
+
+    def _carousel_open(self, now):
+        if self._carousel_active:
+            return
+        print("Carousel: open")
+        self._carousel_active = True
+        self._carousel_idx = 0
+        self._carousel_idle_until = time.ticks_add(now, _CAROUSEL_IDLE_MS)
+        self._carousel_flash_yellow = False
+        self._carousel_flash_next_toggle = time.ticks_add(now, _CAROUSEL_FLASH_MS)
+        self.buttons.set_game_select_input_mode(True)
+        # Render once immediately so the strip changes on this tick.
+        self._carousel_render()
+
+    def _carousel_close(self, reason):
+        if not self._carousel_active:
+            return
+        print(f"Carousel: close ({reason})")
+        self._carousel_active = False
+        self.buttons.set_game_select_input_mode(False)
+        # Clear the strip; the next _update_mode() tick will repaint per the
+        # active lighting mode (auto/manual/off/rainbow).
+        if self.led.enabled:
+            for i in range(LED_START_OFFSET, NUM_LEDS):
+                self.led.strip[i] = (0, 0, 0)
+            self.led.strip.write()
+
+    def _carousel_cycle(self, now):
+        n = len(_CAROUSEL_SLOTS)
+        if n <= 0:
+            return
+        self._carousel_idx = (self._carousel_idx + 1) % n
+        self._carousel_idle_until = time.ticks_add(now, _CAROUSEL_IDLE_MS)
+        # Reset the flash so the new selection LED starts on white.
+        self._carousel_flash_yellow = False
+        self._carousel_flash_next_toggle = time.ticks_add(now, _CAROUSEL_FLASH_MS)
+        self._carousel_render()
+
+    def _carousel_start_selected(self):
+        if not _CAROUSEL_SLOTS:
+            return
+        slot = _CAROUSEL_SLOTS[self._carousel_idx]
+        self._carousel_close("start " + slot)
+        self._start_game_by_name(slot)
+
+    def _carousel_tick(self, now):
+        """Idle-timeout + flash animation. Called every main-loop iteration
+        while the carousel is open."""
+        # Idle timeout
+        if time.ticks_diff(now, self._carousel_idle_until) >= 0:
+            self._carousel_close("idle timeout")
+            return
+        # Flash
+        if time.ticks_diff(now, self._carousel_flash_next_toggle) >= 0:
+            self._carousel_flash_yellow = not self._carousel_flash_yellow
+            self._carousel_flash_next_toggle = time.ticks_add(now, _CAROUSEL_FLASH_MS)
+            self._carousel_render()
+
+    def _carousel_render(self):
+        """Paint the carousel onto the strip.
+
+        N centered white LEDs (N = number of slots). The LED at position
+        `_carousel_idx` (counting from the home end of the carousel block) is
+        the cursor and alternates white<->yellow at 2 Hz; the other LEDs are
+        solid full white.
+        """
+        if not self.led.enabled:
+            return
+        # Clear playable area first (LED 0 is the status LED — never touched).
+        for i in range(LED_START_OFFSET, NUM_LEDS):
+            self.led.strip[i] = (0, 0, 0)
+        n = len(_CAROUSEL_SLOTS)
+        if n <= 0:
+            self.led.strip.write()
+            return
+        # Center N LEDs in the playable region [LED_START_OFFSET, NUM_LEDS-1].
+        play_start = LED_START_OFFSET
+        play_end = NUM_LEDS - 1
+        play_len = play_end - play_start + 1
+        if n >= play_len:
+            # More slots than LEDs: just fill from home end and clamp the cursor.
+            block_start = play_start
+            block_len = play_len
+        else:
+            # Center; with mismatched parity, prefer the home-side pair.
+            extra = play_len - n
+            # Floor-divide so an odd 'extra' leaves the lone gap on the far side.
+            offset = extra // 2
+            block_start = play_start + offset
+            block_len = n
+        # Cursor LED first, then fill rest with solid white.
+        cursor_offset = self._carousel_idx
+        if cursor_offset >= block_len:
+            cursor_offset = block_len - 1
+        from lib.config import LED_BRIGHTNESS_MAX as _LB
+        white = (_LB, _LB, _LB)
+        # Yellow at full brightness — alternates with white at 2 Hz.
+        yellow = (_LB, _LB, 0)
+        for k in range(block_len):
+            i = block_start + k
+            if k == cursor_offset:
+                self.led.strip[i] = yellow if self._carousel_flash_yellow else white
+            else:
+                self.led.strip[i] = white
+        self.led.strip.write()
+
+    # ---------- Game start dispatch ----------
+
+    def _start_game_by_name(self, name):
+        if name == "snake":
+            self.game.start(1)
+        elif name == "simon":
+            self.simon.start()
+        # mastermind: reserved for a follow-up phase. Fall through to a no-op
+        # so the carousel doesn't crash on a future-reserved slot.
+
+    def _on_game_active_change(self, name, active):
+        # Toggle button-input game mode whenever any game starts/stops. Each
+        # game has its own preferred button-to-color map; switch the handler's
+        # active map to match. last_game is persisted here too — single source
+        # of truth.
+        self.buttons.set_game_input_mode(active)
+        if active:
+            self.storage.set_last_game(name)
+            if name == "simon":
+                self.buttons.set_active_color_map(self._simon_color_map)
+            else:
+                # snake (and any future game that wants snake's defaults)
+                self.buttons.set_active_color_map(None)
+        else:
+            # Game ended — revert to snake defaults so the next press-edge
+            # press during a fresh game start reads from a sensible map.
+            self.buttons.set_active_color_map(None)
+
     def _update_mode(self):
         """Update LED state based on current mode"""
         if self.web_server and getattr(self.web_server, "preview_active", False):
             return
-        # Pump the game every cycle. When inactive it just drains pending inputs
-        # so a queued start request transitions state in the same loop iteration.
+        # Carousel owns the strip while open: animation is driven by
+        # _carousel_tick() in run(). Lighting mode is suppressed.
+        if self._carousel_active:
+            return
+        # Pump every game every cycle. When inactive each one just drains
+        # pending inputs so a queued start request transitions state in the
+        # same loop iteration. Only one can be active (refuse-if-busy in
+        # _try_begin), but ticking them all keeps the loop simple.
         self.game.tick()
-        if self.game.is_active():
+        self.simon.tick()
+        if self.registry.any_active():
             return
         mode = self.storage.get_mode()
 
@@ -273,16 +459,17 @@ class HallwayLedBar:
             try:
                 # Handle button inputs
                 button_actions = self.buttons.update()
+                now = time.ticks_ms()
 
-                if self.game.is_active():
-                    # In-game: physical buttons drive game inputs only.
-                    if button_actions['abort_game']:
-                        print("Game aborted by ALT+F1")
+                active_game = self.registry.current_active()
+                if active_game is self.game:
+                    # Snake: pre-shot F1/F2 do level adjust; ALT+F1 aborts;
+                    # F1-held-3s aborts.
+                    if button_actions['abort_game'] or button_actions['f1_held_3s']:
+                        print("Snake aborted (ALT+F1 or F1-held-3s)")
                         self.game.stop()
                     else:
                         delta = button_actions.get('level_delta', 0)
-                        # Pre-shot: F1/F2 mean "level adjust", and the
-                        # press-edge color shot is suppressed.
                         if delta and self.game.shots_fired_this_game() == 0:
                             new_level = max(1, self.game.level + delta)
                             print(f"Level adjust: {self.game.level} -> {new_level}")
@@ -290,18 +477,43 @@ class HallwayLedBar:
                         else:
                             for c in button_actions.get('shoot_colors', ()):
                                 self.game.shoot(c)
+                elif active_game is self.simon:
+                    # Simon: F1-held-3s aborts; every press-edge color is an
+                    # input. Snake-specific level_delta / ALT+F1 abort signals
+                    # are intentionally ignored here.
+                    if button_actions['f1_held_3s']:
+                        print("Simon aborted (F1-held-3s)")
+                        self.simon.stop()
+                    else:
+                        for c in button_actions.get('shoot_colors', ()):
+                            self.simon.input(c)
+                elif self._carousel_active:
+                    # Carousel: F1 cycles, F2 starts, F1-held-3s exits.
+                    if button_actions['f1_held_3s']:
+                        self._carousel_close("F1-held-3s")
+                    elif button_actions['f1_short_press']:
+                        self._carousel_cycle(now)
+                    elif button_actions['f2_short_press']:
+                        self._carousel_start_selected()
+                    else:
+                        self._carousel_tick(now)
                 else:
-                    # Check for AP mode trigger
+                    # Lighting mode (no game, no carousel).
                     if button_actions['ap_mode']:
                         print("AP mode triggered by button combo")
                         self.web_server.stop()
                         self._start_ap_mode()
                         continue
 
-                    # F1 starts a fresh game from the physical panel.
-                    if button_actions.get('start_game'):
-                        print("Starting game from F1")
-                        self.game.start(1)
+                    # F1 short-press in lighting -> open carousel.
+                    if button_actions.get('f1_short_press'):
+                        print("F1 short-press: opening game-select carousel")
+                        self._carousel_open(now)
+                    # F2 short-press in lighting -> quick-start last game.
+                    elif button_actions.get('f2_short_press'):
+                        last = self.storage.get_last_game()
+                        print(f"F2 short-press: quick-starting last game ({last})")
+                        self._start_game_by_name(last)
 
                     # Handle mode changes from buttons
                     if button_actions['mode_change']:
@@ -314,7 +526,8 @@ class HallwayLedBar:
                 # Update status LED flash if active
                 self.led.update_status_led_flash()
 
-                # Update LED state based on mode
+                # Update LED state based on mode (suppressed while carousel
+                # is active; that path does its own rendering in _carousel_tick).
                 self._update_mode()
 
                 # Periodic tasks (only in normal mode)

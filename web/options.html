@@ -145,37 +145,6 @@
                 Brightness values stay 0..1; durations are in milliseconds.
             </p>
 
-            <h3 style="margin-top: 10px;">Game buttons (GPIO pins, 0-47)</h3>
-            <p style="font-size: 0.85em; color: #888; margin-top: -4px;">
-                Pin assignments per color. Defaults alias the existing physical
-                buttons (R/G/B = mode panel, Y/C/M = function row); set to
-                dedicated pins for a 6-button gamepad without overlap.
-            </p>
-            <div class="form-group">
-                <label>Red:</label>
-                <input type="number" id="hw_pin_button_r" min="0" max="47">
-            </div>
-            <div class="form-group">
-                <label>Green:</label>
-                <input type="number" id="hw_pin_button_g" min="0" max="47">
-            </div>
-            <div class="form-group">
-                <label>Blue:</label>
-                <input type="number" id="hw_pin_button_b" min="0" max="47">
-            </div>
-            <div class="form-group">
-                <label>Yellow:</label>
-                <input type="number" id="hw_pin_button_y" min="0" max="47">
-            </div>
-            <div class="form-group">
-                <label>Cyan:</label>
-                <input type="number" id="hw_pin_button_c" min="0" max="47">
-            </div>
-            <div class="form-group">
-                <label>Magenta:</label>
-                <input type="number" id="hw_pin_button_m" min="0" max="47">
-            </div>
-
             <h3 style="margin-top: 20px;">Playfield geometry</h3>
             <div class="form-group">
                 <label>Skip LEDs at home end:</label>
@@ -295,6 +264,84 @@
 
             <button onclick="saveGame()" class="btn btn-primary">Save Game Settings</button>
             <button onclick="resetGame()" class="btn btn-danger">Reset to Defaults</button>
+        </div>
+
+        <div class="card">
+            <h2>Simon Says (Game 2)</h2>
+            <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+                Sequence-memory game tunables. Changes take effect after reboot.
+                Set <em>End LED</em> to <code>-1</code> to mean "last LED on the strip".
+                <em>Per-press timeout</em> is rounded down to a whole number of seconds.
+            </p>
+
+            <h3 style="margin-top: 10px;">Playfield</h3>
+            <div class="form-group">
+                <label>Start LED (inclusive):</label>
+                <input type="number" id="g2_playfield_start_led" min="0">
+            </div>
+            <div class="form-group">
+                <label>End LED (inclusive, -1 = last):</label>
+                <input type="number" id="g2_playfield_end_led" min="-1">
+            </div>
+
+            <h3 style="margin-top: 20px;">Sequence playback</h3>
+            <div class="form-group">
+                <label>Color ON duration (ms):</label>
+                <input type="number" id="g2_flash_on_ms" min="1">
+            </div>
+            <div class="form-group">
+                <label>Gap between colors (ms):</label>
+                <input type="number" id="g2_flash_off_ms" min="1">
+            </div>
+
+            <h3 style="margin-top: 20px;">Input</h3>
+            <div class="form-group">
+                <label>Per-press timeout (ms, whole seconds):</label>
+                <input type="number" id="g2_input_timeout_ms" min="1000" step="1000">
+            </div>
+            <div class="form-group">
+                <label>Press feedback duration (ms):</label>
+                <input type="number" id="g2_press_feedback_ms" min="1">
+            </div>
+
+            <h3 style="margin-top: 20px;">Result feedback</h3>
+            <div class="form-group">
+                <label>Result flash on/off duration (ms):</label>
+                <input type="number" id="g2_result_flash_ms" min="1">
+            </div>
+            <div class="form-group">
+                <label>Result flash count:</label>
+                <input type="number" id="g2_result_flash_count" min="1">
+            </div>
+            <div class="form-group">
+                <label>Score display duration (ms):</label>
+                <input type="number" id="g2_score_display_ms" min="1">
+            </div>
+
+            <h3 style="margin-top: 20px;">Buttons</h3>
+            <p style="font-size: 0.85em; color: #888; margin-top: -4px;">
+                Pick which physical button fires each color. Defaults form a 2&times;2
+                pad: Red=On, Blue=Auto, Yellow=F1, Green=F2.
+            </p>
+            <div class="form-group">
+                <label>Red:</label>
+                <select id="g2_btn_input_red"></select>
+            </div>
+            <div class="form-group">
+                <label>Green:</label>
+                <select id="g2_btn_input_green"></select>
+            </div>
+            <div class="form-group">
+                <label>Blue:</label>
+                <select id="g2_btn_input_blue"></select>
+            </div>
+            <div class="form-group">
+                <label>Yellow:</label>
+                <select id="g2_btn_input_yellow"></select>
+            </div>
+
+            <button onclick="saveGame2()" class="btn btn-primary">Save Simon Says Settings</button>
+            <button onclick="resetGame2()" class="btn btn-danger">Reset to Defaults</button>
         </div>
 
         <div id="message" class="message"></div>

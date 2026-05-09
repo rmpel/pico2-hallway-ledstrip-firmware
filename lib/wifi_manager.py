@@ -94,6 +94,15 @@ class WiFiManager:
 
             print(f"Connecting to WiFi: {ssid}")
             print(f"SSID length: {len(ssid)}, Password length: {len(password)}")
+            try:
+                import hashlib, binascii
+                _h = hashlib.sha256(); _h.update(password.encode("utf-8"))
+                print(f"Password sha256[0:8]: {binascii.hexlify(_h.digest()[:4]).decode()}")
+                # Also dump byte-level info in case there's whitespace / non-printables.
+                _b = password.encode("utf-8")
+                print(f"Password bytes head: {repr(_b[:3])}, tail: {repr(_b[-3:])}")
+            except Exception as _e:
+                print(f"hash diag failed: {_e}")
 
             # Ensure AP mode is off
             self.wlan_ap.active(False)

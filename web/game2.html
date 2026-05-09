@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HallwayLedBar — Simon Says</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .shoot-btn { font-size: 1.6em; padding: 28px 0; min-height: 80px; touch-action: manipulation; user-select: none; }
+        .stat-line { color: #fff; text-align: center; margin: 6px 0; font-size: 1.05em; }
+    </style>
+    <script src="game2.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Simon Says</h1>
+
+        <div class="card">
+            <p style="text-align:center; margin-top:0;">Watch the strip, then repeat the sequence. Keys: <strong>A</strong>=R, <strong>S</strong>=G, <strong>D</strong>=B, <strong>Q</strong>=Y.</p>
+            <div class="stat-line">Round: <span id="round">0</span> &nbsp;|&nbsp; Score: <span id="score">0</span> &nbsp;|&nbsp; Best: <span id="highscore">0</span> &nbsp;|&nbsp; <span id="phase">inactive</span></div>
+            <div class="button-group" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; max-width:340px; margin:0 auto;">
+                <button id="btnR" class="btn shoot-btn" data-color="R" style="background:#e33; color:#fff;">R</button>
+                <button id="btnG" class="btn shoot-btn" data-color="G" style="background:#2c2; color:#fff;">G</button>
+                <button id="btnY" class="btn shoot-btn" data-color="Y" style="background:#cc3; color:#222;">Y</button>
+                <button id="btnB" class="btn shoot-btn" data-color="B" style="background:#36f; color:#fff;">B</button>
+            </div>
+        </div>
+
+        <div style="text-align:center; margin-top:20px; display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap;">
+            <button id="btnBack" class="btn">Back</button>
+            <button id="btnRestart" class="btn">Restart</button>
+        </div>
+
+        <div id="message" class="message"></div>
+    </div>
+</body>
+</html>

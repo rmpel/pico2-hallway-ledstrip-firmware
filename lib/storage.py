@@ -94,6 +94,10 @@ class Storage:
                     settings["hardware"] = {}
                 if "game" not in settings or not isinstance(settings["game"], dict):
                     settings["game"] = {}
+                if "game2" not in settings or not isinstance(settings["game2"], dict):
+                    settings["game2"] = {}
+                if "last_game" not in settings:
+                    settings["last_game"] = "snake"
                 return settings
         except (OSError, ValueError) as e:
             print(f"No settings file found, creating defaults: {e}")
@@ -118,7 +122,9 @@ class Storage:
             "reboot_time": DEFAULT_REBOOT_TIME,
             "non_auto_is_temporary": False,
             "hardware": {},
-            "game": {}
+            "game": {},
+            "game2": {},
+            "last_game": "snake"
         }
 
     def _save_wifi_config(self):
@@ -287,8 +293,6 @@ class Storage:
         pin_keys = (
             "pin_led_strip", "pin_button_off", "pin_button_auto", "pin_button_on",
             "pin_button_f1", "pin_button_f2", "pin_button_alt",
-            "pin_button_r", "pin_button_g", "pin_button_b",
-            "pin_button_y", "pin_button_c", "pin_button_m",
         )
         bool_keys = ("rp_pico_2_neopixel_compat_mode",)
 
@@ -347,6 +351,13 @@ class Storage:
         except ImportError:
             return {}
 
+        # Snake's color->button mapping. Sanitize separately and merge in below.
+        buttons_clean = self._sanitize_button_map(
+            game_dict.get("buttons"),
+            ("shoot_red", "shoot_green", "shoot_blue",
+             "shoot_yellow", "shoot_cyan", "shoot_magenta"),
+        )
+
         # Dual-meaning keys: < 1 = fraction of playfield, >= 1 = exact LED
         # count. Only the lower bound (>= 0) is enforced here.
         dual_meaning_keys = (
@@ -404,7 +415,102 @@ class Storage:
                     continue
                 if ivalue >= 1:
                     cleaned[key] = ivalue
+        if buttons_clean:
+            cleaned["buttons"] = buttons_clean
         return cleaned
+
+    _BUTTON_NAMES = ("off", "auto", "on", "f1", "f2", "alt")
+
+    def _sanitize_button_map(self, raw, allowed_actions):
+        """Validate a {action_name: button_name} mapping. Drop unknown actions
+        and unknown button-name values; missing entries are simply absent
+        (callers fall back to per-game defaults)."""
+        if not isinstance(raw, dict):
+            return {}
+        out = {}
+        for action, btn in raw.items():
+            if action not in allowed_actions:
+                continue
+            if btn in self._BUTTON_NAMES:
+                out[action] = btn
+        return out
+
+    # Game 2 (Simon Says) settings — applied at next reboot. lib/game2.py reads
+    # /settings.json at import time, mirroring how lib/game.py does it.
+    def get_game2_settings(self):
+        return self.settings.get("game2", {}) or {}
+
+    def set_game2_settings(self, g2_dict):
+        self.settings["game2"] = self._sanitize_game2(g2_dict)
+        self._save_settings()
+
+    def _sanitize_game2(self, g2_dict):
+        if not isinstance(g2_dict, dict):
+            return {}
+        try:
+            from game2 import _GAME2_DEFAULTS
+        except ImportError:
+            return {}
+
+        buttons_clean = self._sanitize_button_map(
+            g2_dict.get("buttons"),
+            ("input_red", "input_green", "input_blue", "input_yellow"),
+        )
+
+        # Playfield bounds: ints, but end_led may be -1 (= last LED).
+        # Other ms / count fields: positive ints.
+        positive_int_keys = (
+            "flash_on_ms", "flash_off_ms",
+            "input_timeout_ms", "press_feedback_ms",
+            "result_flash_ms", "result_flash_count",
+            "score_display_ms",
+        )
+
+        cleaned = {}
+        for key, value in g2_dict.items():
+            if key not in _GAME2_DEFAULTS:
+                continue
+            if key == "playfield_start_led":
+                try:
+                    ivalue = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if ivalue >= 0:
+                    cleaned[key] = ivalue
+            elif key == "playfield_end_led":
+                try:
+                    ivalue = int(value)
+                except (TypeError, ValueError):
+                    continue
+                # -1 sentinel = "last LED"; otherwise must be >= 0.
+                if ivalue == -1 or ivalue >= 0:
+                    cleaned[key] = ivalue
+            elif key in positive_int_keys:
+                try:
+                    ivalue = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if ivalue >= 1:
+                    cleaned[key] = ivalue
+        if buttons_clean:
+            cleaned["buttons"] = buttons_clean
+        # input_timeout_ms must be a whole number of seconds (per §5.4a) so the
+        # countdown LED pops land on full-second boundaries. Round down.
+        if "input_timeout_ms" in cleaned:
+            cleaned["input_timeout_ms"] = max(1000, (cleaned["input_timeout_ms"] // 1000) * 1000)
+        return cleaned
+
+    # Last-played game. Used by F2 quick-start in lighting mode.
+    _LAST_GAME_VALID = ("snake", "simon", "mastermind")
+
+    def get_last_game(self):
+        v = self.settings.get("last_game", "snake")
+        return v if v in self._LAST_GAME_VALID else "snake"
+
+    def set_last_game(self, name):
+        if name in self._LAST_GAME_VALID:
+            self.settings["last_game"] = name
+            self._save_settings()
 
     def get_all_settings(self):
         """Get all settings (for web API) - excludes WiFi credentials"""
@@ -425,6 +531,12 @@ class Storage:
                 self.settings["hardware"] = self._sanitize_hardware(new_settings[key])
             elif key == "game":
                 self.settings["game"] = self._sanitize_game(new_settings[key])
+            elif key == "game2":
+                self.settings["game2"] = self._sanitize_game2(new_settings[key])
+            elif key == "last_game":
+                v = new_settings[key]
+                if v in self._LAST_GAME_VALID:
+                    self.settings["last_game"] = v
             else:
                 self.settings[key] = new_settings[key]
         self._save_settings()
