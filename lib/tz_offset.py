@@ -3,15 +3,41 @@
 # lat/lon pair. The result is cached on the device — refreshed weekly so
 # DST transitions are picked up within a week.
 
+import gc
 import time
 try:
     import urequests
 except ImportError:
     urequests = None
+from config import HTTP_PROXY
 
 
 TIMEAPI_URL = "https://www.timeapi.io/api/timezone/coordinate"
 REFRESH_INTERVAL_SECONDS = 7 * 24 * 3600  # weekly
+
+
+_HEX = "0123456789ABCDEF"
+
+
+def _url_encode(s):
+    out = []
+    for ch in s:
+        if ("A" <= ch <= "Z") or ("a" <= ch <= "z") or ("0" <= ch <= "9") or ch in "-_.~":
+            out.append(ch)
+        else:
+            for b in ch.encode("utf-8"):
+                out.append("%")
+                out.append(_HEX[(b >> 4) & 0xF])
+                out.append(_HEX[b & 0xF])
+    return "".join(out)
+
+
+def _maybe_proxy(url):
+    # HTTP_PROXY is the bare proxy hostname; firmware builds the full URL.
+    # Empty / missing → direct HTTPS.
+    if not HTTP_PROXY:
+        return url
+    return "http://" + HTTP_PROXY + "/?_=" + _url_encode(url)
 
 
 class TzOffset:
@@ -45,12 +71,16 @@ class TzOffset:
             return None
 
         lat, lon = self.storage.get_location()[0], self.storage.get_location()[1]
-        url = f"{TIMEAPI_URL}?latitude={lat}&longitude={lon}"
+        upstream = f"{TIMEAPI_URL}?latitude={lat}&longitude={lon}"
+        url = _maybe_proxy(upstream)
         try:
             print(f"Fetching tz offset from {url}")
+            gc.collect()
             r = urequests.get(url)
             data = r.json()
             r.close()
+            r = None
+            gc.collect()
         except Exception as e:
             print(f"tz offset fetch failed: {e}")
             return None

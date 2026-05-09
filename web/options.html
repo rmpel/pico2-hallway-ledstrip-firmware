@@ -132,6 +132,22 @@
                 <input type="number" id="hw_transition_update_ms" min="0">
             </div>
 
+            <h3 style="margin-top: 20px;">Networking</h3>
+            <p style="font-size: 0.85em; color: #888; margin-top: -4px;">
+                Optional plain-HTTP proxy used for outbound API calls (sun
+                times, timezone). Lets the device avoid on-device TLS, which
+                routinely runs out of RAM on the Pico W. Leave empty to use
+                direct HTTPS.
+                <br>Enter just the proxy <strong>hostname</strong> (with
+                optional <code>:port</code>). The firmware adds the
+                <code>http://</code>, the <code>/?_=</code> path, and
+                URL-encodes the upstream URL.
+            </p>
+            <div class="form-group">
+                <label>HTTP proxy host:</label>
+                <input type="text" id="hw_http_proxy" placeholder="http-proxy.example.com" style="width:100%;">
+            </div>
+
             <button onclick="saveHardware()" class="btn btn-primary">Save Hardware Settings</button>
             <button onclick="resetHardware()" class="btn btn-danger">Reset to Defaults</button>
         </div>

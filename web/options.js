@@ -15,9 +15,11 @@ const HARDWARE_DEFAULTS = {
   button_debounce_ms: 50, button_hold_ms: 1000, button_combo_ms: 10000,
   brightness_step: 2, hue_step: 5, saturation_step: 2,
   transition_update_ms: 1000,
+  http_proxy: '',
 };
 
 const HARDWARE_BOOL_KEYS = new Set( ['rp_pico_2_neopixel_compat_mode'] );
+const HARDWARE_STRING_KEYS = new Set( ['http_proxy'] );
 
 // Mirrors lib/game.py _GAME_DEFAULTS — used to pre-fill inputs when no
 // override is set. Keep in sync with the firmware.
@@ -70,6 +72,8 @@ function populateHardware (hw) {
     const value = (key in hw) ? hw[key] : HARDWARE_DEFAULTS[key];
     if (HARDWARE_BOOL_KEYS.has( key )) {
       el.checked = Boolean( value );
+    } else if (HARDWARE_STRING_KEYS.has( key )) {
+      el.value = value == null ? '' : String( value );
     } else {
       el.value = value;
     }
@@ -132,6 +136,11 @@ async function saveHardware () {
     if (!el) continue;
     if (HARDWARE_BOOL_KEYS.has( key )) {
       hw[key] = el.checked;
+      continue;
+    }
+    if (HARDWARE_STRING_KEYS.has( key )) {
+      // String fields: send even when empty (empty = "disable / clear").
+      hw[key] = (el.value || '').trim();
       continue;
     }
     if (el.value === '') continue;

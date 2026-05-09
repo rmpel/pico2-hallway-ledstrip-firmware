@@ -60,6 +60,15 @@ _HARDWARE_DEFAULTS = {
     "saturation_step": 2,
     # Schedule transition update interval (milliseconds)
     "transition_update_ms": 1000,
+    # Optional HTTP proxy for outbound API calls. Pico W's TLS handshake
+    # needs a 30-50 KB contiguous heap block which routinely fails after
+    # the app's modules are loaded — point this at a plain-HTTP proxy that
+    # URL-decodes its `_` query param to bypass on-device TLS. Empty string
+    # disables the proxy (direct HTTPS).
+    # Value is the bare hostname (e.g. "http-proxy.example.com"); the
+    # firmware adds the http:// prefix, the trailing /?_= and URL-encoded
+    # upstream URL.
+    "http_proxy": "",
 }
 
 
@@ -118,6 +127,9 @@ SATURATION_STEP = _h("saturation_step")
 
 # Scheduler
 TRANSITION_UPDATE_MS = _h("transition_update_ms")
+
+# Outbound HTTP proxy (empty = disabled, direct HTTPS)
+HTTP_PROXY = _h("http_proxy")
 
 # Default schedule (example) — fallback when /settings.json has no schedule
 DEFAULT_SCHEDULE = [

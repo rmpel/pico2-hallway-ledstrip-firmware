@@ -291,6 +291,7 @@ class Storage:
             "pin_button_y", "pin_button_c", "pin_button_m",
         )
         bool_keys = ("rp_pico_2_neopixel_compat_mode",)
+        string_keys = ("http_proxy",)
 
         cleaned = {}
         for key, value in hw_dict.items():
@@ -299,6 +300,37 @@ class Storage:
             default = _HARDWARE_DEFAULTS[key]
             if key in bool_keys:
                 cleaned[key] = bool(value)
+                continue
+            if key in string_keys:
+                if value is None:
+                    cleaned[key] = ""
+                    continue
+                if not isinstance(value, str):
+                    continue
+                v = value.strip()
+                if v == "":
+                    cleaned[key] = ""
+                    continue
+                # http_proxy is a bare hostname (firmware adds scheme /
+                # path / query). Accept letters, digits, dot, hyphen, and an
+                # optional ":port". Reject anything that looks like a URL
+                # (scheme prefix, slash, query) so we don't get double-
+                # http://-encoding from a copy/paste mistake.
+                if key == "http_proxy":
+                    ok = True
+                    seen_colon = False
+                    for ch in v:
+                        if ch.isalpha() or ch.isdigit() or ch in ".-":
+                            continue
+                        if ch == ":" and not seen_colon:
+                            seen_colon = True
+                            continue
+                        ok = False
+                        break
+                    if ok and v[0] not in ".-:" and v[-1] != ".":
+                        cleaned[key] = v
+                else:
+                    cleaned[key] = v
                 continue
             try:
                 ivalue = int(value)

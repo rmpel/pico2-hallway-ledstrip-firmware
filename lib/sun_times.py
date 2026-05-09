@@ -1,8 +1,37 @@
 # Sunrise/sunset times API client with caching
 
+import gc
 import urequests
 import time
-from config import SUN_TIMES_API, SUN_TIMES_CACHE_HOURS
+from config import SUN_TIMES_API, SUN_TIMES_CACHE_HOURS, HTTP_PROXY
+
+
+_HEX = "0123456789ABCDEF"
+
+
+def _url_encode(s):
+    """Percent-encode a string for safe use as a query-param value.
+    Encodes everything except RFC 3986 unreserved chars. Implemented
+    locally so we don't need urllib (not in MicroPython's std stdlib)."""
+    out = []
+    for ch in s:
+        if ("A" <= ch <= "Z") or ("a" <= ch <= "z") or ("0" <= ch <= "9") or ch in "-_.~":
+            out.append(ch)
+        else:
+            for b in ch.encode("utf-8"):
+                out.append("%")
+                out.append(_HEX[(b >> 4) & 0xF])
+                out.append(_HEX[b & 0xF])
+    return "".join(out)
+
+
+def _maybe_proxy(url):
+    # HTTP_PROXY is the bare proxy hostname (e.g. "http-proxy.example.com")
+    # read once from /settings.json at config import time. The proxy URL is
+    # built here so the user only configures the host. Empty → bypass.
+    if not HTTP_PROXY:
+        return url
+    return "http://" + HTTP_PROXY + "/?_=" + _url_encode(url)
 
 
 class SunTimes:
@@ -51,12 +80,18 @@ class SunTimes:
             return (None, None)
 
         try:
-            url = f"{SUN_TIMES_API}?lat={lat}&lng={lon}&formatted=1"
+            upstream = f"{SUN_TIMES_API}?lat={lat}&lng={lon}&formatted=1"
+            url = _maybe_proxy(upstream)
             print(f"Fetching sun times from: {url}")
 
+            # Pre-collect even when going through the proxy: the response
+            # buffers can still push us over the line on a fragmented heap.
+            gc.collect()
             response = urequests.get(url)
             data = response.json()
             response.close()
+            response = None
+            gc.collect()
 
             if data.get("status") != "OK":
                 print(f"API error: {data}")
