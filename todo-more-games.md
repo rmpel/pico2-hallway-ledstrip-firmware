@@ -6,6 +6,31 @@ This document is the agreed implementation spec. Implementer should follow it as
 
 ---
 
+## Status (2026-05-09)
+
+**Shipped on `feature/more-games`:**
+- §1 Universal F1-held-3s abort + ALT+F1 abort removal
+- §1.1 Game-select carousel (F1 opens, F1 cycles, F2 starts, F1-held-3s exits, 10-s idle reset on F1, F2 quick-start of `last_game`, white↔yellow 2 Hz flash, lighting frozen while open)
+- §2 Hardware config refactor (dropped `pin_button_r/g/b/y/c/m`; per-game `buttons` block)
+- §3 `lib/game_common.py` (BaseGame, GameRegistry, helpers, button-name list)
+- §5 Simon Says end-to-end (`lib/game2.py`, `web/game2.html`/`game2.js`, `/api/game2/*`, sanitizer, options card)
+- §7 Index page lists Snake + Simon Says (Master Mind link not yet)
+- §8 `_sanitize_game2`, `last_game` top-level key
+- §9 main.py wiring for Snake + Simon
+- §10 web routes for `/game2(.html|.js)` + `/api/game2/*`
+- Bonus (not in original plan, discovered during implementation):
+  - Configurable HTTP proxy at `hardware.http_proxy` (bare hostname; firmware adds scheme + `?_=` + URL-encoded upstream). Sun-times and tz-offset use it. Empty = direct HTTPS.
+  - `gc.collect()` between import groups in `main.py` to keep heap contiguity for the second-core thread. Pico W has ~190 KB usable heap; TLS handshake needs ~30–50 KB contiguous and routinely ENOMEMs after our modules load — the proxy is the workaround.
+
+**Outstanding:**
+- §6 Master Mind (lib/game3.py + web/game3.{html,js} + /api/game3/* + sanitizer + main wiring + options card + index button + carousel slot)
+
+**Open questions / lessons:**
+- Memory budget on Pico W is the binding constraint. Adding game3 may push us back into MemoryError territory. If so: precompile `lib/*.py` to `.mpy` first, or freeze modules into a custom UF2. `.mpy` setup is documented in chat history if/when needed.
+- `/settings.json` writes are non-atomic; concurrent writes from core 0 + core 1 can corrupt. Has not bitten us yet on the merged code, but worth hardening before adding more save sites.
+
+---
+
 ## 0. Scope and ground rules
 
 - **Do NOT change Snake gameplay.** `lib/game.py` may be touched ONLY to extract shared helpers into a new `lib/game_common.py`. Snake’s files keep their existing names (`lib/game.py`, `web/game.html`, `web/game.js`, `/game.json`, `/api/game/*`).
@@ -18,7 +43,7 @@ This document is the agreed implementation spec. Implementer should follow it as
 
 ---
 
-## 1. Global input change: universal abort and game-select
+## 1. Global input change: universal abort and game-select  ✅ DONE
 
 - Remove ALT+F1 abort from Snake and any other code path.
 - Add a **single universal abort**: pressing-and-holding **F1 for 3 seconds** while ANY game is active aborts that game and returns to lighting mode. The same 3-s hold also exits the game-select carousel (§1.1) back to lighting.
@@ -48,7 +73,7 @@ Implementation note: game-select is a lighting-mode UI sub-state, not a game. It
 
 ---
 
-## 2. Hardware config refactor: button names, not color aliases
+## 2. Hardware config refactor: button names, not color aliases  ✅ DONE
 
 Today `config.py` has two parallel sets of button pins (`pin_button_off/auto/on/f1/f2/alt` AND `pin_button_r/g/b/y/c/m`). Per Q4 we collapse this:
 
@@ -95,7 +120,7 @@ On boot, `config.py` reads the new flat 6 pins. `lib/game.py` switches its inter
 
 ---
 
-## 3. Shared infrastructure: `lib/game_common.py`
+## 3. Shared infrastructure: `lib/game_common.py`  ✅ DONE
 
 Extract from `lib/game.py` only what the new games genuinely need to reuse. Keep the module small; avoid premature abstraction.
 
@@ -111,7 +136,7 @@ Initial contents:
 
 ---
 
-## 4. Snake (Game 1) — changes
+## 4. Snake (Game 1) — changes  ✅ DONE
 
 Only two changes:
 1. **Internal**: switch `_game_color_by_btn` lookup from “pin-alias” to “read `game.buttons` from settings, fall back to the defaults in §2.2 table”.
@@ -123,7 +148,8 @@ The index page menu replaces the single “Start game” button with a list (see
 
 ---
 
-## 5. Game 2: Simon Says
+## 5. Game 2: Simon Says  ✅ DONE
+*Implementation note: §5.3 spec said the red/green 3× flash supersedes the per-press color feedback, but in practice that hides the user's keypress. Code instead always shows the press color first (`press_feedback` state, ~150 ms), then the red/green flash. Update spec next time it changes.*
 
 ### 5.1 Files
 `lib/game2.py`, `web/game2.html`, `web/game2.js`, `/game2.json` (highscore), `/api/game2/*` routes.
@@ -233,7 +259,7 @@ Per §1, all keys are remapped while Simon Says is active. The default mapping f
 
 ---
 
-## 6. Game 3: Master Mind
+## 6. Game 3: Master Mind  ⏳ TODO (only outstanding game)
 
 ### 6.1 Files
 `lib/game3.py`, `web/game3.html`, `web/game3.js`, `/game3.json` (highscores), `/api/game3/*` routes.
@@ -346,7 +372,7 @@ Per-length best (fewest guesses to win):
 
 ---
 
-## 7. Index page (menu)
+## 7. Index page (menu)  🟡 PARTIAL (Snake + Simon Says listed; add Master Mind when §6 ships)
 
 Replace the single “Start game” button under the “Game” card with a list of three buttons:
 - **Snake** → `/game`
@@ -357,7 +383,7 @@ Same `.btn` styling as today; stack vertically on mobile, inline on desktop. No 
 
 ---
 
-## 8. Storage / sanitizer changes
+## 8. Storage / sanitizer changes  🟡 PARTIAL (game2 + last_game shipped; game3 sanitizer pending)
 
 `lib/storage.py`:
 - Add `_sanitize_game2(d)` and `_sanitize_game3(d)`, modeled on the existing `_sanitize_game`. Allow only known keys; clamp ranges (e.g. Master Mind length to 3–6, max_guesses ≥ 1, brightnesses to [0,1], ms values ≥ 1).
@@ -371,7 +397,7 @@ Same `.btn` styling as today; stack vertically on mobile, inline on desktop. No 
 
 ---
 
-## 9. main.py wiring
+## 9. main.py wiring  🟡 PARTIAL (Snake + Simon wired; add Master Mind when §6 ships)
 
 ```python
 self.snake      = Game(self.led, self.storage, registry)
@@ -390,7 +416,7 @@ The main loop:
 
 ---
 
-## 10. Web server routes
+## 10. Web server routes  🟡 PARTIAL (game2 routes shipped; game3 routes pending)
 
 Add to `lib/web_server.py`:
 - Static: `/game2`, `/game2.html`, `/game2.js`, `/game3`, `/game3.html`, `/game3.js`.
@@ -412,6 +438,7 @@ The constructor takes the registry (or all three game references); existing `gam
 ---
 
 ## 12. Implementation order (suggested)
+*Update: §1–§5 + §7-partial + §8-partial + §9-partial + §10-partial are merged on `feature/more-games`. Remaining order is just §6 (Master Mind) + finishing the partial sections to include game3.*
 
 1. §1 + §2: button refactor + universal F1-3s abort. Make sure Snake still plays.
 2. §3: extract `lib/game_common.py` with `BaseGame` and helpers.
