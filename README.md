@@ -299,3 +299,8 @@ MIT License — feel free to modify and use as you wish.
 ## Credits
 
 Built with MicroPython for Raspberry Pi Pico W.
+
+## PROXY SERVICE
+
+SSL is problematic for a classic Pico, use a proxy service, see the proxy directory for a PHP implementation.
+Create a (sub)domain somewhere that runs HTTP, place the index file, set-up the proxy in settings.
