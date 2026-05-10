@@ -67,7 +67,7 @@ class WiFiManager:
         self.is_ap_mode = False
         print("AP mode stopped")
 
-    def connect_to_wifi(self, ssid=None, password=None, timeout=20, retries=5):
+    def connect_to_wifi(self, ssid=None, password=None, timeout=20, retries=20):
         """
         Connect to WiFi network with retry logic
         ssid: WiFi SSID (if None, use stored credentials)
@@ -101,16 +101,16 @@ class WiFiManager:
 
             # Deactivate and reactivate station mode for clean slate
             self.wlan_sta.active(False)
-            time.sleep(0.5)
+            time.sleep(1)
             self.wlan_sta.active(True)
-            time.sleep(0.5)
+            time.sleep(1)
 
             # Force 2.4GHz by disabling power management
             # This helps with mesh/multiband routers
-            try:
-                self.wlan_sta.config(pm=0xa11140)  # Disable power management
-            except:
-                pass
+#             try:
+#                 self.wlan_sta.config(pm=0xa11140)  # Disable power management
+#             except:
+#                 pass
 
             print(f"Calling wlan.connect()...")
             self.wlan_sta.connect(ssid, password)
@@ -138,7 +138,7 @@ class WiFiManager:
                 elif status == -3:  # STAT_WRONG_PASSWORD
                     print(f"Wrong password for '{ssid}'")
                     self.led.status_led_failed()
-                    return False  # Don't retry on wrong password
+                    self.led.status_led_connecting()
 
                 if elapsed > timeout:
                     print(f"Connection attempt {attempt + 1} timeout after {timeout}s")
