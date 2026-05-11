@@ -158,7 +158,7 @@ def _sha256_of_file(path):
 
 
 class WebServer:
-    def __init__(self, storage, wifi_manager, scheduler, sun_times, ntp_sync=None, tz_offset=None, game=None, simon=None):
+    def __init__(self, storage, wifi_manager, scheduler, sun_times, ntp_sync=None, tz_offset=None, game=None, simon=None, mastermind=None):
         """Initialize web server"""
         self.storage = storage
         self.wifi = wifi_manager
@@ -168,6 +168,7 @@ class WebServer:
         self.tz_offset = tz_offset
         self.game = game
         self.simon = simon
+        self.mastermind = mastermind
         self.socket = None
         self.preview_active = False
 
@@ -330,6 +331,7 @@ class WebServer:
                 "hardware" in new_settings
                 or "game" in new_settings
                 or "game2" in new_settings
+                or "game3" in new_settings
             )
 
             self.storage.update_settings(new_settings)
@@ -478,6 +480,9 @@ class WebServer:
         if self.simon is not None and self.simon.is_active():
             self._send_json(client, "409 Conflict", {"success": False, "error": "busy"})
             return
+        if self.mastermind is not None and self.mastermind.is_active():
+            self._send_json(client, "409 Conflict", {"success": False, "error": "busy"})
+            return
         level = 1
         if request_body:
             try:
@@ -539,6 +544,9 @@ class WebServer:
         if self.game is not None and self.game.is_active():
             self._send_json(client, "409 Conflict", {"success": False, "error": "busy"})
             return
+        if self.mastermind is not None and self.mastermind.is_active():
+            self._send_json(client, "409 Conflict", {"success": False, "error": "busy"})
+            return
         if self.simon.is_active():
             # Already running — treat as success so the page can settle.
             self._send_json(client, "200 OK", {"success": True})
@@ -574,6 +582,65 @@ class WebServer:
             self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
             return
         self._send_json(client, "200 OK", self.simon.get_status())
+
+    # ---- Game 3 (Master Mind) ----
+
+    def _handle_api_game3_start(self, client, request_body):
+        if self.mastermind is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        if self.game is not None and self.game.is_active():
+            self._send_json(client, "409 Conflict", {"success": False, "error": "busy"})
+            return
+        if self.simon is not None and self.simon.is_active():
+            self._send_json(client, "409 Conflict", {"success": False, "error": "busy"})
+            return
+        if self.mastermind.is_active():
+            self._send_json(client, "200 OK", {"success": True})
+            return
+        # Optional `length`. Omitted -> enter length-select on the strip.
+        length = None
+        if request_body:
+            try:
+                data = json.loads(request_body)
+                if isinstance(data, dict) and "length" in data:
+                    length = int(data.get("length"))
+            except (ValueError, TypeError):
+                length = None
+        self.mastermind.start(length=length)
+        if length is None:
+            self._send_json(client, "200 OK", {"success": True})
+        else:
+            self._send_json(client, "200 OK", {"success": True, "length": length})
+
+    def _handle_api_game3_stop(self, client):
+        if self.mastermind is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        self.mastermind.stop()
+        self._send_json(client, "200 OK", {"success": True})
+
+    def _handle_api_game3_input(self, client, request_body):
+        """POST /api/game3/input {"color": "R"|"G"|"B"|"Y"|"C"|"M"}"""
+        if self.mastermind is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        try:
+            data = json.loads(request_body)
+            color = data.get("color")
+            if color not in ("R", "G", "B", "Y", "C", "M"):
+                self._send_json(client, "400 Bad Request", {"success": False, "error": "invalid color"})
+                return
+            self.mastermind.input(color)
+            self._send_json(client, "200 OK", {"success": True})
+        except Exception as e:
+            self._send_json(client, "400 Bad Request", {"success": False, "error": str(e)})
+
+    def _handle_api_game3_status(self, client):
+        if self.mastermind is None:
+            self._send_json(client, "503 Service Unavailable", {"success": False, "error": "game unavailable"})
+            return
+        self._send_json(client, "200 OK", self.mastermind.get_status())
 
     def _handle_upload(self, client, query, total_body_len, leftover):
         """Stream body to /staging/<path>, hash it, validate, atomically rename."""
@@ -922,6 +989,24 @@ class WebServer:
 
             elif path == '/api/game2/status' and method == 'GET':
                 self._handle_api_game2_status(client)
+
+            elif path == '/game3' or path == '/game3.html':
+                self._send_static(client, '/web/game3.html', "text/html")
+
+            elif path == '/game3.js':
+                self._send_static(client, '/web/game3.js', "application/javascript")
+
+            elif path == '/api/game3/start' and method == 'POST':
+                self._handle_api_game3_start(client, body)
+
+            elif path == '/api/game3/stop' and method == 'POST':
+                self._handle_api_game3_stop(client)
+
+            elif path == '/api/game3/input' and method == 'POST':
+                self._handle_api_game3_input(client, body)
+
+            elif path == '/api/game3/status' and method == 'GET':
+                self._handle_api_game3_status(client)
 
             elif path == '/api/files/list' and method == 'GET':
                 self._handle_files_list(client)

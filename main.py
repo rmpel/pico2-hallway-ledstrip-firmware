@@ -27,6 +27,7 @@ gc.collect()
 from lib.web_server import WebServer
 from lib.game import Game
 from lib.game2 import SimonGame, resolve_simon_button_map
+from lib.game3 import MasterMindGame, resolve_mastermind_button_map
 from lib.game_common import GameRegistry
 gc.collect()
 
@@ -34,8 +35,8 @@ gc.collect()
 # Game-select carousel: ordered list of game slot names. F1 in lighting mode
 # opens the carousel showing N centered white LEDs (one per slot); F1 cycles
 # through them; F2 starts the highlighted slot. Adding a future game appends
-# to this tuple. Master Mind slot reserved for a follow-up phase.
-_CAROUSEL_SLOTS = ("snake", "simon")
+# to this tuple.
+_CAROUSEL_SLOTS = ("snake", "simon", "mastermind")
 
 # Carousel timings
 _CAROUSEL_IDLE_MS = 10000      # auto-close after 10 s of no F1/F2
@@ -67,9 +68,12 @@ class HallwayLedBar:
         self.game.on_active_change = lambda active: self._on_game_active_change("snake", active)
         self.simon = SimonGame(self.led, self.storage, self.registry)
         self.simon.on_active_change = lambda active: self._on_game_active_change("simon", active)
-        # Cache Simon's button map so we only resolve it once per boot.
+        self.mastermind = MasterMindGame(self.led, self.storage, self.registry)
+        self.mastermind.on_active_change = lambda active: self._on_game_active_change("mastermind", active)
+        # Cache each game's button map so we only resolve it once per boot.
         self._simon_color_map = resolve_simon_button_map()
-        self.web_server = WebServer(self.storage, self.wifi, self.scheduler, self.sun_times, self.ntp, self.tz_offset, self.game, self.simon)
+        self._mastermind_color_map = resolve_mastermind_button_map()
+        self.web_server = WebServer(self.storage, self.wifi, self.scheduler, self.sun_times, self.ntp, self.tz_offset, self.game, self.simon, self.mastermind)
 
         # State
         self.last_transition_update = 0
@@ -296,8 +300,9 @@ class HallwayLedBar:
             self.game.start(1)
         elif name == "simon":
             self.simon.start()
-        # mastermind: reserved for a follow-up phase. Fall through to a no-op
-        # so the carousel doesn't crash on a future-reserved slot.
+        elif name == "mastermind":
+            # Per §6.4: hardware start path enters length-select before play.
+            self.mastermind.start(length=None)
 
     def _on_game_active_change(self, name, active):
         # Toggle button-input game mode whenever any game starts/stops. Each
@@ -309,6 +314,8 @@ class HallwayLedBar:
             self.storage.set_last_game(name)
             if name == "simon":
                 self.buttons.set_active_color_map(self._simon_color_map)
+            elif name == "mastermind":
+                self.buttons.set_active_color_map(self._mastermind_color_map)
             else:
                 # snake (and any future game that wants snake's defaults)
                 self.buttons.set_active_color_map(None)
@@ -331,6 +338,7 @@ class HallwayLedBar:
         # _try_begin), but ticking them all keeps the loop simple.
         self.game.tick()
         self.simon.tick()
+        self.mastermind.tick()
         if self.registry.any_active():
             return
         mode = self.storage.get_mode()
@@ -487,6 +495,27 @@ class HallwayLedBar:
                     else:
                         for c in button_actions.get('shoot_colors', ()):
                             self.simon.input(c)
+                elif active_game is self.mastermind:
+                    # Master Mind: F1-held-3s aborts. While in length-select,
+                    # F1 cycles and F2 confirms (no color input). During play,
+                    # every press-edge color is an input — including whatever
+                    # F1/F2/ALT happen to be mapped to. We disambiguate by
+                    # looking at the game's phase.
+                    if button_actions['f1_held_3s']:
+                        print("Master Mind aborted (F1-held-3s)")
+                        self.mastermind.stop()
+                    elif self.mastermind.get_phase() == "length_select":
+                        # Use raw button presses, not shoot_colors — F1/F2
+                        # have a special meaning here. ALT and other keys are
+                        # ignored per §6.4.
+                        pressed = button_actions.get('pressed_buttons', ())
+                        if 'f1' in pressed:
+                            self.mastermind.select_cycle()
+                        if 'f2' in pressed:
+                            self.mastermind.select_confirm()
+                    else:
+                        for c in button_actions.get('shoot_colors', ()):
+                            self.mastermind.input(c)
                 elif self._carousel_active:
                     # Carousel: F1 cycles, F2 starts, F1-held-3s exits.
                     if button_actions['f1_held_3s']:

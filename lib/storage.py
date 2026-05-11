@@ -96,6 +96,8 @@ class Storage:
                     settings["game"] = {}
                 if "game2" not in settings or not isinstance(settings["game2"], dict):
                     settings["game2"] = {}
+                if "game3" not in settings or not isinstance(settings["game3"], dict):
+                    settings["game3"] = {}
                 if "last_game" not in settings:
                     settings["last_game"] = "snake"
                 return settings
@@ -124,6 +126,7 @@ class Storage:
             "hardware": {},
             "game": {},
             "game2": {},
+            "game3": {},
             "last_game": "snake"
         }
 
@@ -532,6 +535,95 @@ class Storage:
             cleaned["input_timeout_ms"] = max(1000, (cleaned["input_timeout_ms"] // 1000) * 1000)
         return cleaned
 
+    # Game 3 (Master Mind) settings — applied at next reboot. lib/game3.py
+    # reads /settings.json at import time, mirroring how lib/game.py and
+    # lib/game2.py do it.
+    def get_game3_settings(self):
+        return self.settings.get("game3", {}) or {}
+
+    def set_game3_settings(self, g3_dict):
+        self.settings["game3"] = self._sanitize_game3(g3_dict)
+        self._save_settings()
+
+    def _sanitize_game3(self, g3_dict):
+        if not isinstance(g3_dict, dict):
+            return {}
+        try:
+            from game3 import _GAME3_DEFAULTS
+        except ImportError:
+            return {}
+
+        buttons_clean = self._sanitize_button_map(
+            g3_dict.get("buttons"),
+            ("input_red", "input_green", "input_blue",
+             "input_yellow", "input_cyan", "input_magenta"),
+        )
+
+        # Length fields are clamped to [3, 6] per §6.6. ms / count fields are
+        # positive ints. Separator brightness is a fraction in [0, 1].
+        length_keys = ("default_length", "min_length", "max_length")
+        positive_int_keys = (
+            "max_guesses",
+            "feedback_hold_ms", "reveal_hold_ms",
+            "result_flash_ms", "result_flash_count",
+        )
+
+        cleaned = {}
+        for key, value in g3_dict.items():
+            if key not in _GAME3_DEFAULTS:
+                continue
+            if key == "playfield_start_led":
+                try:
+                    ivalue = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if ivalue >= 0:
+                    cleaned[key] = ivalue
+            elif key == "playfield_end_led":
+                try:
+                    ivalue = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if ivalue == -1 or ivalue >= 0:
+                    cleaned[key] = ivalue
+            elif key in length_keys:
+                try:
+                    ivalue = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if 3 <= ivalue <= 6:
+                    cleaned[key] = ivalue
+            elif key in positive_int_keys:
+                try:
+                    ivalue = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if ivalue >= 1:
+                    cleaned[key] = ivalue
+            elif key == "separator_brightness":
+                try:
+                    fvalue = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if 0.0 <= fvalue <= 1.0:
+                    cleaned[key] = fvalue
+        # Cross-field invariant: min_length <= max_length, default in [min, max].
+        # If both are present, enforce. If only one is present, leave it (the
+        # other inherits from defaults at runtime).
+        if "min_length" in cleaned and "max_length" in cleaned:
+            if cleaned["min_length"] > cleaned["max_length"]:
+                cleaned["max_length"] = cleaned["min_length"]
+        if "default_length" in cleaned:
+            lo = cleaned.get("min_length", 3)
+            hi = cleaned.get("max_length", 6)
+            if cleaned["default_length"] < lo:
+                cleaned["default_length"] = lo
+            elif cleaned["default_length"] > hi:
+                cleaned["default_length"] = hi
+        if buttons_clean:
+            cleaned["buttons"] = buttons_clean
+        return cleaned
+
     # Last-played game. Used by F2 quick-start in lighting mode.
     _LAST_GAME_VALID = ("snake", "simon", "mastermind")
 
@@ -565,6 +657,8 @@ class Storage:
                 self.settings["game"] = self._sanitize_game(new_settings[key])
             elif key == "game2":
                 self.settings["game2"] = self._sanitize_game2(new_settings[key])
+            elif key == "game3":
+                self.settings["game3"] = self._sanitize_game3(new_settings[key])
             elif key == "last_game":
                 v = new_settings[key]
                 if v in self._LAST_GAME_VALID:

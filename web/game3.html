@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HallwayLedBar — Master Mind</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .shoot-btn { font-size: 1.6em; padding: 28px 0; min-height: 80px; touch-action: manipulation; user-select: none; }
+        .stat-line { color: #fff; text-align: center; margin: 6px 0; font-size: 1.05em; }
+        .guess-row { display: flex; gap: 6px; align-items: center; justify-content: center; margin: 4px 0; }
+        .slot { width: 28px; height: 28px; border-radius: 50%; border: 1px solid #444; }
+        .peg { width: 14px; height: 14px; border-radius: 50%; border: 1px solid #444; }
+        .peg-green { background: #2c2; }
+        .peg-red { background: #e33; }
+        .peg-empty { background: #222; }
+        .slot-empty { background: #222; }
+        .slot-R { background: #e33; }
+        .slot-G { background: #2c2; }
+        .slot-B { background: #36f; }
+        .slot-Y { background: #cc3; }
+        .slot-C { background: #3cc; }
+        .slot-M { background: #c3c; }
+        .pegs { display: flex; gap: 3px; margin-left: 10px; }
+        .history-box { max-height: 280px; overflow-y: auto; }
+        .hs-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
+        .hs-cell { color: #fff; }
+    </style>
+    <script src="game3.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Master Mind</h1>
+
+        <div class="card">
+            <p style="text-align:center; margin-top:0;">Crack the secret. Keys: <strong>A</strong>=R, <strong>S</strong>=G, <strong>D</strong>=B, <strong>Q</strong>=Y, <strong>W</strong>=C, <strong>E</strong>=M.</p>
+
+            <div style="text-align:center; margin-bottom:10px;">
+                <label style="color:#fff;">Code length
+                    <input id="codeLength" type="number" min="3" max="6" value="4" style="width:60px; margin-left:6px;">
+                </label>
+                <button id="btnStart" class="btn btn-primary" style="margin-left:8px;">Start</button>
+                <button id="btnStop" class="btn" style="margin-left:8px;">Stop</button>
+            </div>
+
+            <div class="stat-line">Phase: <span id="phase">inactive</span> &nbsp;|&nbsp; Guess <span id="guessesUsed">0</span>/<span id="maxGuesses">10</span></div>
+
+            <div class="guess-row">
+                <strong style="color:#fff;">Now:</strong>
+                <div id="currentGuess" style="display:flex; gap:6px;"></div>
+            </div>
+
+            <div class="button-group" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:12px;">
+                <button id="btnR" class="btn shoot-btn" data-color="R" style="background:#e33; color:#fff;">R</button>
+                <button id="btnG" class="btn shoot-btn" data-color="G" style="background:#2c2; color:#fff;">G</button>
+                <button id="btnB" class="btn shoot-btn" data-color="B" style="background:#36f; color:#fff;">B</button>
+                <button id="btnY" class="btn shoot-btn" data-color="Y" style="background:#cc3; color:#222;">Y</button>
+                <button id="btnC" class="btn shoot-btn" data-color="C" style="background:#3cc; color:#222;">C</button>
+                <button id="btnM" class="btn shoot-btn" data-color="M" style="background:#c3c; color:#fff;">M</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-top:0;">History</h2>
+            <div id="history" class="history-box"></div>
+        </div>
+
+        <div class="card">
+            <h2 style="margin-top:0;">Best (fewest guesses)</h2>
+            <div class="hs-grid">
+                <div class="hs-cell">L=3<br><span id="hs3">—</span></div>
+                <div class="hs-cell">L=4<br><span id="hs4">—</span></div>
+                <div class="hs-cell">L=5<br><span id="hs5">—</span></div>
+                <div class="hs-cell">L=6<br><span id="hs6">—</span></div>
+            </div>
+        </div>
+
+        <div style="text-align:center; margin-top:20px;">
+            <button id="btnBack" class="btn">Back</button>
+        </div>
+
+        <div id="message" class="message"></div>
+    </div>
+</body>
+</html>

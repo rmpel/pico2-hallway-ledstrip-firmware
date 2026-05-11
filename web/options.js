@@ -62,6 +62,35 @@ const GAME2_BUTTON_DEFAULTS = {
 const GAME2_BUTTON_ACTIONS = ['input_red', 'input_green', 'input_blue', 'input_yellow'];
 const BUTTON_NAMES = ['off', 'auto', 'on', 'f1', 'f2', 'alt'];
 
+// Mirrors lib/game3.py _GAME3_DEFAULTS. Keep in sync with the firmware.
+const GAME3_DEFAULTS = {
+  playfield_start_led: 0, playfield_end_led: -1,
+  default_length: 4, min_length: 3, max_length: 6,
+  max_guesses: 10,
+  feedback_hold_ms: 5000, reveal_hold_ms: 5000,
+  result_flash_ms: 250, result_flash_count: 3,
+  separator_brightness: 0.20,
+};
+
+// separator_brightness is the only float field; everything else is an int.
+const GAME3_FRACTION_KEYS = new Set(['separator_brightness']);
+
+// Default game3 button mapping — matches §6.6 of todo-more-games.md and
+// the _DEFAULT_MM_BUTTON_TO_COLOR dict in lib/game3.py. Action -> button.
+const GAME3_BUTTON_DEFAULTS = {
+  input_red:     'off',
+  input_green:   'auto',
+  input_blue:    'on',
+  input_yellow:  'f1',
+  input_cyan:    'f2',
+  input_magenta: 'alt',
+};
+
+const GAME3_BUTTON_ACTIONS = [
+  'input_red', 'input_green', 'input_blue',
+  'input_yellow', 'input_cyan', 'input_magenta',
+];
+
 async function loadConfig() {
   try {
     const r = await fetch( '/api/config' );
@@ -72,6 +101,7 @@ async function loadConfig() {
     populateHardware( config.hardware || {} );
     populateGame( config.game || {} );
     populateGame2( config.game2 || {} );
+    populateGame3( config.game3 || {} );
   } catch (e) {
     showMessage( 'Failed to load configuration', 'error' );
   }
@@ -263,6 +293,70 @@ async function resetGame2 () {
   if (!confirm( 'Reset all Simon Says settings to defaults? Takes effect after reboot.' )) return;
   const response = await postConfig( {game2: {}}, 'Simon Says settings reset to defaults' );
   populateGame2( {} );
+  await maybePromptReboot( response );
+}
+
+function ensureGame3ButtonOptions () {
+  for (const action of GAME3_BUTTON_ACTIONS) {
+    const sel = document.getElementById( 'g3_btn_' + action );
+    if (!sel || sel.options.length > 0) continue;
+    for (const name of BUTTON_NAMES) {
+      const opt = document.createElement( 'option' );
+      opt.value = name;
+      opt.textContent = name.toUpperCase();
+      sel.appendChild( opt );
+    }
+  }
+}
+
+function populateGame3 (g3) {
+  for (const key of Object.keys( GAME3_DEFAULTS )) {
+    const el = document.getElementById( 'g3_' + key );
+    if (!el) continue;
+    el.value = (key in g3) ? g3[key] : GAME3_DEFAULTS[key];
+  }
+  ensureGame3ButtonOptions();
+  const buttons = (g3 && g3.buttons) || {};
+  for (const action of GAME3_BUTTON_ACTIONS) {
+    const sel = document.getElementById( 'g3_btn_' + action );
+    if (!sel) continue;
+    sel.value = buttons[action] || GAME3_BUTTON_DEFAULTS[action];
+  }
+}
+
+async function saveGame3 () {
+  const game3 = {};
+  for (const key of Object.keys( GAME3_DEFAULTS )) {
+    const el = document.getElementById( 'g3_' + key );
+    if (!el || el.value === '') continue;
+    if (GAME3_FRACTION_KEYS.has( key )) {
+      const f = parseFloat( el.value );
+      if (Number.isNaN( f )) continue;
+      game3[key] = f;
+    } else {
+      const n = parseInt( el.value, 10 );
+      if (Number.isNaN( n )) continue;
+      game3[key] = n;
+    }
+  }
+  const buttons = {};
+  for (const action of GAME3_BUTTON_ACTIONS) {
+    const sel = document.getElementById( 'g3_btn_' + action );
+    if (!sel) continue;
+    if (BUTTON_NAMES.indexOf( sel.value ) === -1) continue;
+    buttons[action] = sel.value;
+  }
+  if (Object.keys( buttons ).length > 0) {
+    game3.buttons = buttons;
+  }
+  const response = await postConfig( {game3}, 'Master Mind settings saved' );
+  await maybePromptReboot( response );
+}
+
+async function resetGame3 () {
+  if (!confirm( 'Reset all Master Mind settings to defaults? Takes effect after reboot.' )) return;
+  const response = await postConfig( {game3: {}}, 'Master Mind settings reset to defaults' );
+  populateGame3( {} );
   await maybePromptReboot( response );
 }
 

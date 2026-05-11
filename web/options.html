@@ -360,6 +360,102 @@
             <button onclick="resetGame2()" class="btn btn-danger">Reset to Defaults</button>
         </div>
 
+        <div class="card">
+            <h2>Master Mind (Game 3)</h2>
+            <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+                Code-breaking game tunables. Changes take effect after reboot.
+                Set <em>End LED</em> to <code>-1</code> to mean "last LED on the strip".
+                Lengths are clamped to 3..6.
+            </p>
+
+            <h3 style="margin-top: 10px;">Playfield</h3>
+            <div class="form-group">
+                <label>Start LED (inclusive):</label>
+                <input type="number" id="g3_playfield_start_led" min="0">
+            </div>
+            <div class="form-group">
+                <label>End LED (inclusive, -1 = last):</label>
+                <input type="number" id="g3_playfield_end_led" min="-1">
+            </div>
+
+            <h3 style="margin-top: 20px;">Length</h3>
+            <div class="form-group">
+                <label>Default length (3-6):</label>
+                <input type="number" id="g3_default_length" min="3" max="6">
+            </div>
+            <div class="form-group">
+                <label>Min length (3-6):</label>
+                <input type="number" id="g3_min_length" min="3" max="6">
+            </div>
+            <div class="form-group">
+                <label>Max length (3-6):</label>
+                <input type="number" id="g3_max_length" min="3" max="6">
+            </div>
+
+            <h3 style="margin-top: 20px;">Gameplay</h3>
+            <div class="form-group">
+                <label>Max guesses:</label>
+                <input type="number" id="g3_max_guesses" min="1">
+            </div>
+            <div class="form-group">
+                <label>Feedback hold (ms):</label>
+                <input type="number" id="g3_feedback_hold_ms" min="1">
+            </div>
+            <div class="form-group">
+                <label>Reveal hold on loss (ms):</label>
+                <input type="number" id="g3_reveal_hold_ms" min="1">
+            </div>
+
+            <h3 style="margin-top: 20px;">Win flash</h3>
+            <div class="form-group">
+                <label>Flash on/off duration (ms):</label>
+                <input type="number" id="g3_result_flash_ms" min="1">
+            </div>
+            <div class="form-group">
+                <label>Flash count:</label>
+                <input type="number" id="g3_result_flash_count" min="1">
+            </div>
+
+            <h3 style="margin-top: 20px;">Render</h3>
+            <div class="form-group">
+                <label>Separator brightness (0.0 - 1.0):</label>
+                <input type="number" id="g3_separator_brightness" min="0" max="1" step="0.05">
+            </div>
+
+            <h3 style="margin-top: 20px;">Buttons</h3>
+            <p style="font-size: 0.85em; color: #888; margin-top: -4px;">
+                Pick which physical button fires each color. Defaults map every
+                button: R=Off, G=Auto, B=On, Y=F1, C=F2, M=Alt.
+            </p>
+            <div class="form-group">
+                <label>Red:</label>
+                <select id="g3_btn_input_red"></select>
+            </div>
+            <div class="form-group">
+                <label>Green:</label>
+                <select id="g3_btn_input_green"></select>
+            </div>
+            <div class="form-group">
+                <label>Blue:</label>
+                <select id="g3_btn_input_blue"></select>
+            </div>
+            <div class="form-group">
+                <label>Yellow:</label>
+                <select id="g3_btn_input_yellow"></select>
+            </div>
+            <div class="form-group">
+                <label>Cyan:</label>
+                <select id="g3_btn_input_cyan"></select>
+            </div>
+            <div class="form-group">
+                <label>Magenta:</label>
+                <select id="g3_btn_input_magenta"></select>
+            </div>
+
+            <button onclick="saveGame3()" class="btn btn-primary">Save Master Mind Settings</button>
+            <button onclick="resetGame3()" class="btn btn-danger">Reset to Defaults</button>
+        </div>
+
         <div id="message" class="message"></div>
     </div>
 </body>
